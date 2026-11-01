@@ -1,0 +1,123 @@
+# check power output fit on cluster
+
+```{r}
+here::i_am("flag_project_root.R")
+here::here()
+data_path = here::here()
+
+power_df <- read.csv(paste0(data_path, "/gen-avo/data-analysis/power/powersim/powercurves_quadr.csv")) 
+
+
+ggplot(power_df, aes(x = nlevels, y = successes/100)) +
+  geom_line(color = "#090049", size = 1.2) +
+  geom_point(size = 2, color = "#090049") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#090049", alpha = 0.4) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "black") +
+  labs(
+    x = "Sample Size",
+    y = "Estimated Power"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    aspect.ratio = 1
+  )+facet_wrap(~ iteration, scales = "free_y")+ylim(c(0, 1))
+
+
+```
+
+```{r}
+ggplot(power_df, aes(x = nlevels, y = successes/100, group = iteration)) +
+  geom_line(color = "#090049", size = 0.8, alpha = 0.5) +
+  geom_point(size = 2, color = "#090049") +
+  #geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#090049", alpha = 0.4) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "black") +
+  labs(
+    x = "Sample Size",
+    y = "Estimated Power"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    aspect.ratio = 1
+  )
+
+```
+
+
+```{r}
+# Summarize across iterations
+mean_power_df <- power_df %>%
+  group_by(nlevels) %>%
+  summarise(
+    mean_power = mean(successes/100, na.rm = TRUE),
+    lower = mean_power - sd(successes/100, na.rm = TRUE),
+    upper = mean_power + sd(successes/100, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Plot single mean curve with ribbon
+ggplot(mean_power_df, aes(x = nlevels, y = mean_power)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#FF69B4", alpha = 0.4) +
+  geom_line(color = "#FF69B4", size = 1.2) +
+  geom_point(color = "#FF69B4", size = 2) +
+  geom_hline(yintercept = 0.95, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "black") +
+  labs(
+    x = "Sample Size",
+    y = "Estimated Power"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    aspect.ratio = 1
+  )
+
+
+```
+
+
+```{r}
+# Subset for power ~0.8 and ~0.9
+power_sub <- power_df %>%
+  filter((mean >= 0.80 & mean < 0.9) | (mean >= 0.9 & mean <= 0.99)) %>%
+  mutate(power_group = case_when(
+    mean >= 0.80 & mean < 0.9 ~ "80-89% Power",
+    mean >= 0.90 & mean <= 0.99 ~ "90-99% Power"
+  ))
+
+# Overview of distribution of nlevels (sample size aka ppt) for each power group
+ggplot(power_sub, aes(x = power_group, y = nlevels, fill = power_group)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter()+
+  facet_wrap(~ power_group, scales = "free") +
+  labs(
+    x = "Power Group",
+    y = "N Participants"
+  ) +
+  theme_minimal() +
+  theme(aspect.ratio = 1,
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"
+  )+ scale_fill_manual(values = c("80-89% Power" = "#090049", 
+                               "90-99% Power" = "#FF69B4")) 
+
+power_means <- power_sub %>%
+  group_by(power_group) %>%
+  summarise(
+    mean_nlevels = mean(nlevels, na.rm = TRUE),
+    mean_successes = mean(successes, na.rm = TRUE),
+    mean_power = mean(mean, na.rm = TRUE),
+    count = n()
+  )
+power_means
+
+```

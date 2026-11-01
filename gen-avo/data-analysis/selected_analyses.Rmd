@@ -1,0 +1,2176 @@
+---
+title: "selected_analyses"
+author: "Lu"
+date: "2025-11-06"
+output: html_document
+---
+
+```{r}
+#install.packages("renv")
+#renv::restore()
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load("renv", "here", "knitr", "dplyr")
+
+packages <- c("tidyverse", "ggpubr","lme4", "jsonlite","paletteer", "tm","effectsize","minpack.lm")
+lapply(packages, library, character.only = TRUE)
+
+here::i_am("flag_project_root.R")
+here::here()
+data_path = here::here()
+```
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+### Get and transform data for analysis.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+```{r}
+df <- read.csv(paste0(data_path, "/data/finalcollection/alldata.csv" ), header = TRUE) %>%
+  mutate(Time = "T1")
+
+# From JSON-like character vectors to actual lists
+df <- df %>% mutate(
+  csPosition = map(csPosition, ~ if (is.character(.x)) fromJSON(.x) else .x),
+  ratingCoordinate = map(ratingCoordinate, ~ if (is.character(.x)) fromJSON(.x) else .x)
+)
+
+#split coordinates for CS+ and ratings into two columns 
+df <- df %>%
+  mutate(csX = map_dbl(csPosition, 1), 
+         csY = map_dbl(csPosition, 2)) 
+
+df <- df %>%
+  mutate(
+    rateX = map_dbl(ratingCoordinate, ~ if (length(.x) == 2) .x[[1]] else 0),
+    rateY = map_dbl(ratingCoordinate, ~ if (length(.x) == 2) .x[[2]] else 0)
+  )
+
+#adjust for 1 indexing 
+df$csX = df$csX+1
+df$csY = df$csY+1
+df$rateX = df$rateX+1
+df$rateY = df$rateY+1
+length(unique(df$ppt))
+```
+
+```{r}
+#expand the navi section into 1 move x row {takes a little time}
+df <- df %>%
+  mutate(
+    path_clean = gsub("'", "\"", path),
+    moveTime_clean = gsub("'", "\"", moveTime)
+  )
+
+navigate_df <- df %>% filter(state == "navigating")
+
+expanded_df <- navigate_df %>%
+  mutate(
+    parsed_path = map(path_clean, ~ fromJSON(.x)),
+    parsed_time = map(moveTime_clean, ~ fromJSON(.x))
+  ) %>%
+  unnest_longer(parsed_path, indices_to = "move") %>%
+  mutate(
+    move_col = map_dbl(parsed_path, "col"),
+    move_row = map_dbl(parsed_path, "row"),
+    move_time = map2_dbl(parsed_time, move, ~ .x[[.y]])
+  ) %>%
+  select(-parsed_path, -parsed_time) %>%
+  mutate(move = as.character(move))
+
+non_navigate <- df %>% filter(state != "navigating")
+
+non_navigate <- non_navigate %>%
+  mutate(
+    move = NA_character_,
+    move_col = NA_real_,
+    move_row = NA_real_,
+    move_time = NA_real_
+  )
+
+final_df <- bind_rows(expanded_df, non_navigate) 
+
+#R indexing
+final_df$move_col = final_df$move_col +1
+final_df$move_row = final_df$move_row +1
+```
+
+
+```{r}
+#feedback expand. 
+final_df <- final_df %>%
+  mutate(
+    feedback_clean = gsub("'", "\"", feedback),
+
+    # Parse feedback JSON per row
+    feedback_parsed = map(feedback_clean, ~ {
+      if (is.na(.x) || .x == "") return(NULL)
+      tryCatch(fromJSON(.x), error = function(e) NULL)
+    }),
+
+    # Extract dogsLost by indexing with run
+    dogsLost = map2_dbl(feedback_parsed, run, ~ {
+      if (is.null(.x)) return(NA_real_)
+      run_key <- as.character(.y)
+      val <- .x[[run_key]]
+      if (is.null(val) || length(val) == 0) return(NA_real_)
+      return(as.numeric(val)) 
+    })
+  ) %>%
+  select(-feedback_clean, -feedback_parsed)
+
+```
+
+```{r}
+# keep relevant vars
+df <- subset_df <- final_df %>% select(ID, run, state, trial, csPosition, csValue, RT, rating, ratingCoordinate, nMoves, starving, slider, time, scheduleID, userInput, Time, csX, csY, rateX, rateY, move, move_col, move_row, move_time, dogsLost, dogCollection)
+
+```
+
+#Main vars and useful func
+```{r}
+GRID_SIZE <- 11
+
+# Func to convert string dictionary to a valid JSON format
+parse_func <- function(x) {
+  x <- gsub("'", "\"", x)
+  parsed_list <- fromJSON(x)
+  return(unlist(parsed_list))
+}
+
+
+parse_df <- function(json_str) {
+  if (is.na(json_str) || json_str %in% c("", "null", "0")) {  
+    return(tibble(RUN = character(), saved = numeric()))  
+  }
+  
+  parsed_list <- tryCatch(fromJSON(json_str), error = function(e) list())
+
+  if (!length(parsed_list)) {
+    return(tibble(RUN = character(), saved = numeric()))  
+  }
+  
+  RUN <- names(parsed_list)
+  saved <- as.numeric(unlist(parsed_list))
+
+  # Remove entries where saved == 0
+  valid_idx <- saved != 0
+  RUN <- RUN[valid_idx]
+  saved <- saved[valid_idx]
+
+  if (length(RUN) != length(saved)) {
+    return(tibble(RUN = character(), saved = numeric()))  
+  }
+  
+  tibble(RUN = RUN, saved = saved)
+}
+
+
+# Function to calculate Euclidean distance
+euclidean_distance <- function(coord, pos) {
+  if (length(coord) != 2 || length(pos) != 2) return(NA)
+  sqrt((coord[1] - pos[1])^2 + (coord[2] - pos[2])^2)
+}
+
+#extends a palette to n of colors needed
+extend_palette <- function(palette_name, n) {
+  pal <- wes_palette(palette_name, type = "discrete")
+  if (length(pal) >= n) {
+    return(pal[1:n])
+  } else {
+    return(rep(pal, length.out = n))
+  }
+}
+
+```
+
+
+
+#Get mh data & exclusion data 
+```{r}
+#MARK EXCLUDED PPT
+dfquest <- read.csv(paste0(data_path, "/data/finalcollection/questionnaires/processedsurveySUBSCALE.csv"), header = TRUE)
+
+dfquest$ID = dfquest$PROLIFICID
+
+df <- df %>%
+  left_join(dfquest, by = "ID")
+```
+
+
+```{r}
+#No difference in excluded participants in terms of mh
+dfs <- df %>%
+  group_by(ID, checks, tics_score, cape_scoredistressed,cape_scorefeel,ctq_score, idas_score, pswq_score, ius_score) %>%
+  summarise(sticsa = mean(sticsa_score, na.rm = TRUE))
+
+t.test(data = dfs, sticsa~checks)
+t.test(data = dfs, tics_score~checks)
+t.test(data = dfs, cape_scoredistressed~checks)
+t.test(data = dfs, ctq_score~checks)
+t.test(data = dfs, idas_score~checks)
+t.test(data = dfs, pswq_score~checks)
+t.test(data = dfs, ius_score~checks) 
+```
+
+
+
+#Select good ppt. (exclusion based on infrequency items)
+#One infreq. x questionnaire
+```{r}
+failed_checks <- unique(df$ID[df$checks == 0])
+
+print("Excluded ppt:")
+print(length(failed_checks))
+
+df <- df[!df$ID %in% failed_checks, ]
+print("Included ppt:")
+length(unique(df$ID))
+
+weird <- c()
+df <- df[!df$ID %in% weird, ]
+print("Included ppt:")
+length(unique(df$ID))
+```
+
+
+#check questionnaire score distribution 
+```{r}
+dfsum <- df %>%
+  group_by(ID) %>%
+  summarise(
+    sticsa = mean(sticsa_score, na.rm = TRUE),
+    tics   = mean(tics_score, na.rm = TRUE),
+    capedistressed   = mean(cape_scoredistressed, na.rm = TRUE),
+    capefeel  = mean(cape_scorefeel, na.rm = TRUE),
+    ctq    = mean(ctq_score, na.rm = TRUE),
+    sticsa_somatic = mean(sticsa_somatic, na.rm = TRUE),
+    sticsa_cognitive = mean(sticsa_cognitive, na.rm = TRUE),
+    idas   = mean(idas_score, na.rm = TRUE),
+    pswq   = mean(pswq_score, na.rm = TRUE),
+    iou    = mean(ius_score, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+#long format
+dfsum_long <- dfsum %>%
+  pivot_longer(
+    cols = -ID,
+    names_to = "questionnaire",
+    values_to = "score"
+  )
+
+ggplot(data = dfsum_long, aes(x = score)) +geom_histogram(bins = 10, fill = 'darkblue', alpha = 0.6) +theme_minimal() +theme(aspect.ratio = 1) +labs(title = "Distribution of Questionnaire Scores") +facet_wrap(~ questionnaire, scales = "free", ncol = 4)
+
+```
+
+#gender info
+```{r}
+demo_files <- list.files(path = paste0(data_path,"/data/finalcollection/demographics"),pattern = "\\.csv$",full.names = TRUE)
+
+dfdemo <- demo_files %>%
+  lapply(read.csv) %>%
+  bind_rows() 
+
+dfdemo = dfdemo[dfdemo$Status == "APPROVED" | dfdemo$Status == "AWAITING REVIEW",]
+
+df <- df %>%
+  left_join(dfdemo %>% select(ID, Sex), by = "ID")
+
+dfsex <- df%>%
+  distinct(ID, .keep_all = TRUE) %>%
+  count(Sex)
+
+dfsex
+```
+
+#add factor scores
+```{r}
+files <- c(
+  "F3_solution.csv"
+)
+
+paths <- paste0(data_path,"/data/finalcollection/questionnaires/", files)
+
+
+df <- reduce(paths, function(df_acc, path) {
+  dffac <- read.csv(path, header = TRUE)
+  dffac$ID <- dffac$subject
+  left_join(df_acc, dffac, by = "ID")
+}, .init = df)
+```
+
+
+```{r}
+fdf <- df %>%
+  group_by(F1iip, F2iip, F3iip) %>%
+  summarise(
+    lostTotal = mean(dogsLost, na.rm = TRUE)
+  ) 
+
+#dist fac scores
+dffac2_long <- fdf %>%
+  pivot_longer(cols = c(F1iip, F2iip, F3iip),
+               names_to = "Factor",
+               values_to = "Value")
+
+ggplot(dffac2_long, aes(x = Value)) +geom_histogram(bins = 10, fill = "darkblue", alpha = 0.6) +theme_minimal() +theme(aspect.ratio = 1) +labs(title = "Factor Scores Distribution", x = "Value", y = "Count") +facet_wrap(~ Factor, scales = "free_x")
+```
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+### Check task performance and feedback.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+## Time taken to complete task 
+```{r}
+timeTaken <- df %>%
+  group_by(ID) %>%
+  summarise(max_time_minutes = max(time) / (1000 * 60))
+
+print("Time taken for entire task:")
+mean(timeTaken$max_time_minutes)
+sd(timeTaken$max_time_minutes)
+```
+
+
+##Dogs lost
+```{r}
+saved_df <- df[df$run < 9,] %>%
+  group_by(ID) %>%
+  summarise(lostTotal = mean(dogsLost, na.rm = TRUE))
+
+print("Dogs lost on average:")
+mean(saved_df$lostTotal)
+sd(saved_df$lostTotal)
+
+
+t.test(saved_df$lostTotal, mu = 5.75)
+cohens_d(saved_df$lostTotal, mu = 5.75)
+```
+
+
+#Higher F2 marginally more dogs lost
+```{r}
+saved_df <- df %>%
+  group_by(ID, run, sticsa_score, sticsa_somatic, sticsa_cognitive, tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score, F1iip, F2iip, F3iip) %>%
+  summarise(
+    lostTotal = mean(dogsLost, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+long_df <- saved_df %>%
+  pivot_longer(
+    cols = -c(ID, run, lostTotal),
+    names_to = "questionnaire",
+    values_to = "score"
+  )
+
+dfp <- long_df %>%
+  group_by(ID, questionnaire) %>%
+  summarise(
+    lostTotal  = mean(lostTotal, na.rm = TRUE),
+    score  = mean(score, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+dfp_F <- dfp %>% filter(questionnaire %in% c("F1iip", "F2iip", "F3iip"))
+ggplot(dfp_F, aes(x = score, y = lostTotal)) +geom_point(color = '#E6A3EE') +geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ questionnaire, scales = "free_x", ncol = 4) +theme_minimal() +theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(title = "Dogs lost & Factor scores")
+
+iddf <- saved_df %>%
+group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(
+    lostTotal = mean(lostTotal, na.rm = TRUE)
+    ) %>%
+    ungroup()
+
+cor.test(iddf$lostTotal, iddf$F1iip,  use="pairwise")
+cor.test(iddf$lostTotal, iddf$F2iip,  use="pairwise")
+cor.test(iddf$lostTotal, iddf$F3iip,  use="pairwise")
+```
+
+
+# How do they react to feedback? Do they go up or down depending on what they are being told?
+```{r}
+dff <- df %>%
+  filter(state == "navigating") %>%
+  group_by(ID, run, dogsLost,sticsa_score, sticsa_somatic, sticsa_cognitive,tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score,F1iip, F2iip, F3iip) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), 
+            mean_lost = mean(dogsLost, na.rm = TRUE),.groups = "drop")
+  
+dflag <- dff %>%
+  arrange(ID, run) %>%  # Ensure data is ordered by ID and RUN
+  group_by(ID,F1iip, F2iip, F3iip ) %>%
+  mutate(lost_prev = lag(mean_lost)) %>% 
+  ungroup()
+
+dfp <- dflag %>%
+  group_by(ID,F1iip, F2iip, F3iip)%>%
+  summarise(lost = mean(lost_prev, na.rm = TRUE), moves = mean(nMoves, na.rm = TRUE),.groups = "drop")
+
+ggplot(dfp, aes(x = lost, y = moves)) +geom_point(size = 2, color = '#E6A3EE', alpha=0.7) + geom_smooth(method = "lm", se = TRUE, color = 'black') +labs(title = "",x = "Mean Lost in Previous Run",y = "Mean nMoves in Current Run") +theme_classic()+theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14),plot.subtitle = element_text(size = 14))+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") 
+
+cor_result <- cor.test(dfp$lost, dfp$moves, method = "pearson")
+cor_result
+```
+
+## Slider slightly more focus on sinking 
+```{r}
+dfQuestions <- df %>%
+  filter(state == "feedback") %>%
+  group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(slider = first(slider), .groups = "drop")
+
+dfQuestions$slider = as.numeric(dfQuestions$slider)
+mean(dfQuestions$slider)
+sd(dfQuestions$slider)
+```
+
+
+##Slider: No association slider and MH
+```{r}
+dfQuestions <- df %>%
+  filter(state == "feedback") %>%
+  group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(slider = first(slider), .groups = "drop")
+
+dfQuestions_long <- dfQuestions %>%
+  pivot_longer(
+    cols = c(F1iip, F2iip, F3iip),
+    names_to = "Factor",
+    values_to = "Score"
+  )
+
+dfQuestions_long$slider = as.numeric(dfQuestions_long$slider)
+ggplot(dfQuestions_long, aes(x = Score, y = slider)) +geom_point(size = 2, color = 'darkblue', alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = 'black') +facet_wrap(~Factor, scales = "free_x")+theme_classic() +theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson",label.x.npc = "left",label.y.npc = "top")
+```
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+### RATINGS PRE / POST
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+```{r}
+df <- df %>%
+  mutate(distance = map2_dbl(ratingCoordinate, csPosition, euclidean_distance))
+
+#add match no match condition
+df_pre <- df %>% filter(state == "ratingPRE")
+df_post <- df %>% filter(state == "ratingPOST")
+df_pre <- df_pre %>%
+  mutate(ratingCoordinate_str = map_chr(ratingCoordinate, ~ toString(.x)))
+df_post <- df_post %>%
+  mutate(ratingCoordinate_str = map_chr(ratingCoordinate, ~ toString(.x)))
+
+# Merge PRE and POST
+df_post <- df_post %>%
+  group_by(ID, run) %>%
+  mutate(Match = as.integer(ratingCoordinate_str %in% df_pre$ratingCoordinate_str[df_pre$ID == ID & df_pre$run == run])) %>% #match = 1, no match = 0
+  ungroup()
+
+df <- df %>%
+  left_join(df_post %>% select(ID, run, ratingCoordinate, Match), 
+            by = c("ID", "run", "ratingCoordinate"))
+
+df_plot <- df %>%
+  filter(state %in% c("ratingPRE", "ratingPOST")) %>%
+  mutate(state = factor(state, levels = c("ratingPRE", "ratingPOST")))
+
+
+ggplot(data = df_plot, aes(x = rating, fill = state))+geom_histogram(bins = 15)+ theme_minimal()+theme(aspect.ratio = 1)+geom_vline(xintercept = 70, linetype = "dashed", color = "black") + scale_fill_paletteer_d("MexBrewer::Casita3")+labs(title = "Ratings PRE distribution")+facet_grid(.~state)+ scale_fill_manual(values = c("#91316D","#090049"))
+```
+
+
+## First hint for Generalisation: ratings /= 0
+```{r}
+pre_checks <- df %>%
+  filter(state %in% c("ratingPRE", "ratingPOST")) %>%
+  mutate(distanceRound = round(distance))
+
+pct_nonzero <- pre_checks %>%
+  group_by(state) %>%
+  summarise(
+    percent_nonzero = mean(rating != 0, na.rm = TRUE) * 100)
+
+print("Percentage of non 0 ratings:")
+pct_nonzero
+```
+
+# Check how ratings decrease with location of rated distance (PRE)
+```{r}
+pre_checks <- df[df$state == "ratingPRE" | df$state == "ratingPOST",] %>%
+  mutate(distanceRound = round(distance))%>%
+  group_by(ID, distanceRound, state) %>%
+  summarise(avg_rat = mean(rating, na.rm = TRUE), .groups = "drop")
+
+pre_checks_av <- pre_checks %>%
+  group_by(distanceRound, state) %>%
+  summarise(avg_rat = mean(avg_rat, na.rm = TRUE), .groups = "drop")
+
+ggplot()+geom_point(data = pre_checks, aes(x = distanceRound, y = avg_rat, group = ID, color = state), color = 'grey')+geom_line(data = pre_checks, aes(x = distanceRound, y = avg_rat, group = ID), color = 'grey')+ggtitle("PRE Rating x distance")+geom_line(data = pre_checks_av, aes(x = distanceRound, y = avg_rat,color = state), linewidth = 1.5)+geom_point(data = pre_checks_av, aes(x = distanceRound, y = avg_rat), size = 3, shape = 4)+theme_minimal()+theme(aspect.ratio = 1)+facet_grid(.~state)+ scale_color_manual(values = c("#090049","#91316D"))
+```
+
+```{r}
+pre_checks <- df[df$state == "ratingPRE",] %>%
+  mutate(distanceRound = round(distance))%>%
+  group_by(ID, distanceRound) %>%
+  summarise(avg_rat = mean(rating, na.rm = TRUE), .groups = "drop")
+
+pre_checks_av <- pre_checks %>%
+  group_by(distanceRound) %>%
+  summarise(avg_rat = mean(avg_rat, na.rm = TRUE), .groups = "drop")
+
+ggplot()+geom_point(data = pre_checks, aes(x = distanceRound, y = avg_rat, group = ID), color = 'grey')+geom_line(data = pre_checks, aes(x = distanceRound, y = avg_rat, group = ID), color = 'grey')+geom_line(data = pre_checks_av, aes(x = distanceRound, y = avg_rat), linewidth = 1.5, color = "#91316D")+geom_point(data = pre_checks_av, aes(x = distanceRound, y = avg_rat), size = 3, shape = 4)+theme_minimal()+theme(aspect.ratio = 1)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+ylab("Ratings (pre)")+xlab("Distance from storm")
+
+#ggsave(paste0(data_path, "/output/Plots/ratings_pre.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+
+#Worry/IOU Factor associated with higher ratings. 
+```{r}
+dfsum <- df %>%
+  filter(state == "ratingPRE" | state == "ratingPOST") %>%
+  group_by(ID, state) %>%
+  summarise(
+    avg_rating = mean(rating, na.rm = TRUE),
+    F1iip = mean(F1iip, na.rm = TRUE),
+    F2iip = mean(F2iip, na.rm = TRUE),
+    F3iip = mean(F3iip, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+dfsum_long <- dfsum %>%
+  pivot_longer(
+    cols = c(F1iip, F2iip, F3iip),
+    names_to = "factor",
+    values_to = "score"
+  )
+
+ggplot(dfsum_long, aes(x = score, y = avg_rating, color = state)) + geom_point(alpha = 0.7) + geom_smooth(method = "lm", se = TRUE) + stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top") + facet_wrap(~factor, scales = "free_x") + labs(title = "Factors & Ratings PRE", x = "Factor Score", y = "Average Rating") + theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)+facet_grid(state~factor)+ scale_color_manual(values = c("#090049","#91316D"))
+```
+
+```{r}
+corr_results <- dfsum_long %>%
+  group_by(state, factor) %>%
+  summarise(
+    cor_test = list(cor.test(score, avg_rating, use = "complete.obs", method = "pearson")),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy_res = map(cor_test, broom::tidy)
+  ) %>%
+  unnest(tidy_res) %>%
+  select(state, factor, estimate, p.value, conf.low, conf.high)
+
+corr_results
+```
+
+
+#Worry/IOU Factor associated with AUC
+```{r}
+# Get AUC using trapezoidal rule
+dfauc <- df[df$state == "ratingPRE" | df$state == "ratingPOST",] %>%
+  arrange(ID, distance)
+
+auc_results <- dfauc %>%
+  group_by(ID, run, state) %>%
+  summarise(AUC = sum((lead(distance) - distance) * 
+                      (rating + lead(rating)) / 2, na.rm = TRUE),
+              F1iip = first(F1iip),
+            F2iip = first(F2iip),
+            F3iip = first(F3iip)
+            )
+
+auc_results2 <- auc_results %>%
+  group_by(ID, F1iip,F2iip,F3iip, state) %>%
+  summarise(mean_auc = mean(AUC))
+
+auc_long <- auc_results2 %>%
+  pivot_longer(
+    cols = c(F1iip, F2iip, F3iip),
+    names_to = "factor",
+    values_to = "score"
+  )
+
+ggplot(auc_long, aes(x = score, y = mean_auc, color = state)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE) +facet_wrap(~factor, scales = "free_x") +labs(x = "Factor Score",y = "Mean AUC",title = "Correlation of Factors with AUC") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top")+facet_grid(state~factor)+ scale_color_manual(values = c("#090049","#91316D"))
+```
+
+
+```{r}
+corr_results <- auc_long %>%
+  group_by(state, factor) %>%
+  summarise(
+    cor_test = list(cor.test(score, mean_auc, use = "complete.obs", method = "pearson")),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy_res = map(cor_test, broom::tidy)
+  ) %>%
+  unnest(tidy_res) %>%
+  select(state, factor, estimate, p.value, conf.low, conf.high)
+
+corr_results
+```
+
+
+
+#Factors Median split
+```{r}
+df_long <- df %>%
+  filter(state == "ratingPRE") %>%
+  select(ID, distance, rating, F1iip, F2iip, F3iip) %>%
+  pivot_longer(cols = c(F1iip, F2iip, F3iip), names_to = "factor", values_to = "score") %>%
+  group_by(factor) %>%
+  mutate(group = ifelse(score <= median(score, na.rm = TRUE), "Low", "High")) %>%
+  ungroup()
+
+# Summarize average rating and SE by distance and median split
+pre_checks <- df_long %>%
+  group_by(factor, distance, group) %>%
+  summarise(
+    avg_rat = mean(rating, na.rm = TRUE),
+    se = sd(rating, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# Plot with facets for each factor
+ggplot(pre_checks, aes(x = distance, y = avg_rat, group = group, color = group, fill = group)) +geom_ribbon(aes(ymin = avg_rat - se, ymax = avg_rat + se), alpha = 0.3, color = NA) +geom_line(size = 1) +geom_point(size = 2) +facet_wrap(~factor, labeller = as_labeller(c("F1iip" = "Anxiety/Depression","F2iip" = "IoU/Worry","F3iip" = "Positive affect/Mania"))) +theme_minimal() +theme(aspect.ratio = 1)+ scale_color_manual(values = c("#66D9FF","#ff00ff58"),name = "Median Split Factor")+ scale_fill_manual(values = c("#66D9FF","#ff00ff58"),name = "Median Split Factor")+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 12),strip.text = element_text(size = 10, face = "bold"))+ylab("Rating (pre)") + xlab("Distance from storm")
+```
+
+#simulation results - illustration
+```{r}
+ggplot(dfX<-data.frame(x=rep(seq(-3,3,0.01),2),facet=rep(c("Width change","Peak change"),each=601),g1=dexp(seq(-3,3,0.01)^2),g2=c(dexp(seq(-3,3,0.01)^2/0.2),dexp(seq(-3,3,0.01)^2)*0.5)),aes(x,g1,color=facet,group=facet))+geom_line(size=1.2)+geom_line(aes(y=g2),size=1.2)+scale_color_manual(values=c("Width change"="#ff00ff58","Peak change"="#66D9FF"))+facet_wrap(~facet,scales="free")+theme_classic()+theme(axis.title=element_blank(),axis.text=element_blank(),axis.ticks=element_blank(),strip.text=element_blank(),legend.position="none",aspect.ratio=1)
+
+#ggsave(paste0(data_path, "/output/Plots/show_effect.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+##REG.MODELS: Ratings PRE
+```{r}
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#BASIC
+m.rate.basic <- lmer(data=df[df$state == "ratingPRE",], rating ~ distance+ run + (1|ID))
+car::Anova(m.rate.basic)
+car::vif(m.rate.basic)
+summary(m.rate.basic)
+
+effectsize::eta_squared(m.rate.basic, alternative = "two.sided")
+
+
+df$rating_rescaled <- df$rating/100
+df <- df %>%
+  mutate(rating_rescaled = case_when(
+    rating_rescaled == 0 ~ 0.0001,
+    rating_rescaled == 1 ~ 0.9999,
+    TRUE ~ rating_rescaled
+  ))
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+m.fac <- lmer(data=df[df$state == "ratingPRE",], rating ~ F1iip*distance + F2iip*distance + F3iip*distance+ run + (1|ID))
+car::Anova(m.fac)
+car::vif(m.fac)
+summary(m.fac)
+effectsize::eta_squared(m.fac, alternative = "two.sided")
+
+es <- effectsize::eta_squared(m.fac, alternative = "two.sided")
+nonround <- as.data.frame(es)
+
+
+
+#F1:distance   
+(distlist <- list( distance = c(0:5)))
+slopes_F1 <- modelbased::estimate_slopes(m.fac, trend = "F1iip", at = distlist)
+slopes_F1$model <- "Anxious-Depression"
+plot(slopes_F1)+theme_classic()+theme(aspect.ratio = 1)+ggtitle("F1 increases ratings further away")
+
+#F2:distance   
+slopes_F2 <- modelbased::estimate_slopes(m.fac, trend = "F2iip", at = distlist)
+slopes_F2$model <- "IoU-Worry"
+plot(slopes_F2)+theme_classic()+theme(aspect.ratio = 1)+ggtitle("F2 increases ratings at peak")
+
+slopes_all <- rbind(slopes_F1, slopes_F2)
+
+ggplot(slopes_all, aes(x = distance, y = Coefficient, color = model, fill = model)) +
+  geom_ribbon(aes(ymin = CI_low, ymax = CI_high), alpha = 0.2, color = NA) +
+  geom_line(size = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    x = "Distance from storm",
+    y = "Effect of symptom dimension",
+    color = "Symptom dimension",
+    fill = "Symptom dimension"
+  )+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+ scale_color_manual(values=c("#ff00ff58", "#66D9FF")) + scale_fill_manual(values=c("grey", "grey"))
+
+#ggsave(paste0(data_path, "/output/Plots/show_effect_trends.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+```
+
+```{r}
+#Plot effects
+effects_df <- broom.mixed::tidy(m.fac, effects = "fixed", conf.int = TRUE) %>%
+  filter(grepl(":", term))
+
+ggplot(effects_df, aes(x = factor(term, levels = c("F1iip:distance", "distance:F2iip", "distance:F3iip")), y = estimate, fill = term)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(x = "Interaction", y = "Effect size (estimate)") +
+  theme_classic(base_size = 14) +
+  theme(aspect.ratio = 1, legend.position = "none")+ scale_color_manual(values = c("#66D9FF", "darkgrey","#ff00ff58"))+ scale_fill_manual(values = c("#66D9FF", "darkgrey","#ff00ff58"))+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14,angle = 45,),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/es.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+#sim_slopes(m.fac, pred = "F2iip", modx = "distance")
+```
+
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+### NAVIGATION: Overall paths length and distance kept 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+
+```{r}
+navi <- df[df$state == "navigating",]
+
+average_moves <- navi %>%
+  group_by(ID) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), .groups = "drop")
+
+print("Mean n Moves:")
+mean(average_moves$nMoves)
+sd(average_moves$nMoves)
+
+t.test(average_moves$nMoves, mu = 9, alternative = "greater")
+```
+
+### 1 nMoves: Path length as proxi for avoidance: ppt avoid. 
+```{r}
+average_moves <- navi %>%
+  group_by(ID) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), .groups = "drop")
+
+ggplot(average_moves, aes(x = "", y = nMoves)) +
+  geom_boxplot(fill = "#91316D")+geom_jitter(width = 0.15)+ theme_minimal()+theme(aspect.ratio = 1)+geom_hline(yintercept = 9, linetype = "dashed", color = "black")+
+  scale_fill_paletteer_d("MexBrewer::Casita3")+xlab("ID")
+
+
+ggplot(data = average_moves, aes(x = nMoves))+geom_histogram(bins = 20, fill = "#91316D")+theme_minimal()+theme(aspect.ratio = 1) +
+  scale_fill_paletteer_d("MexBrewer::Casita3")+geom_vline(xintercept = 9, linetype = "dashed", color = "black") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+ylab("Count")+xlab("Path length")
+```
+
+
+
+```{r}
+dfp <- df[df$state == "navigating", ] %>%
+  group_by(ID, run) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE),.groups = "drop")
+
+df_var <- dfp %>%
+  group_by(ID) %>%
+  summarise(
+    mean_nMoves = mean(nMoves, na.rm = TRUE),
+    sd_nMoves   = sd(nMoves,   na.rm = TRUE),
+    var_nMoves  = var(nMoves,  na.rm = TRUE),
+    .groups = "drop"
+  )
+
+df_pred <- df %>%
+  select(ID, F1iip, F2iip, F3iip) %>%
+  distinct()
+
+df_all <- df_var %>%
+  left_join(df_pred, by = "ID")
+
+cor.test(df_all$sd_nMoves, df_all$F1iip,  use = "pairwise")
+cor.test(df_all$sd_nMoves, df_all$F2iip, use = "pairwise")
+cor.test(df_all$sd_nMoves, df_all$F3iip, use = "pairwise")
+
+```
+
+
+
+
+#Intolerance & Worry have longer paths
+```{r}
+navi_long <- df %>%
+  filter(state == "navigating") %>%
+  group_by(ID, sticsa_score, F1iip, F2iip, F3iip) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), .groups = "drop") %>%
+  pivot_longer(
+    cols = c(F1iip, F2iip, F3iip),
+    names_to = "factor",
+    values_to = "score"
+  )
+
+# F2 has longer paths!
+ggplot(navi_long, aes(x = score, y = nMoves)) +geom_point(alpha = 0.7, size = 2, fill = "black") +geom_smooth(method = "lm", se = TRUE, color = "#91316D") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +ylab("Path length")+xlab("Factor Score") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+facet_wrap(~factor, labeller = as_labeller(c("F1iip" = "Anxiety/Depression","F2iip" = "IoU/Worry","F3iip" = "Positive affect/Mania")))+theme(aspect.ratio = 1,axis.title.x = element_text(size = 12),axis.title.y = element_text(size = 12),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 12),strip.text = element_text(size = 10, face = "bold"))
+```
+
+
+```{r}
+#Intolerance & Worry have longer paths
+
+navi_long <- df %>%
+  filter(state == "navigating") %>%
+  group_by(ID, sticsa_score, F1iip, F2iip, F3iip) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), .groups = "drop") %>%
+  pivot_longer(
+    cols = c(F1iip, F2iip, F3iip),
+    names_to = "factor",
+    values_to = "score"
+  )
+
+# F2 has longer paths!
+ggplot(navi_long[navi_long$factor == "F2iip",], aes(x = score, y = nMoves)) +geom_point(alpha = 0.7, size = 2, fill = "black") +geom_smooth(method = "lm", se = TRUE, color = "#66D9FF") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +ylab("Path length")+xlab("IoU-Worry Score") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+theme_classic()+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+
+#ggsave(paste0(data_path, "/output/Plots/iou_avoidance.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+```{r}
+corr_results <- navi_long %>%
+  group_by(factor) %>%
+  summarise(
+    cor_test = list(cor.test(score, nMoves, use = "complete.obs", method = "pearson")),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy_res = map(cor_test, broom::tidy)
+  ) %>%
+  unnest(tidy_res) %>%
+  select(factor, estimate, p.value, conf.low, conf.high)
+
+corr_results
+
+#reg
+m.fac.avoid <- lmer(data=df[df$state == "navigating",], nMoves ~ F1iip + F2iip + F3iip+ run + (1|ID))
+car::Anova(m.fac.avoid)
+car::vif(m.fac.avoid)
+summary(m.fac.avoid)
+effectsize::eta_squared(m.fac.avoid, alternative = "two.sided")
+```
+
+
+
+
+### 2) Distance kept from CS+ 
+```{r}
+#euclidean distance to df
+df <- df %>%
+  mutate(
+    move_distance_from_cs = sqrt((move_row - csX)^2 + (move_col - csY)^2)
+  )
+
+#How far do ppt stay from CS+ ?
+navi <- df %>% filter(state == "navigating")
+dst <- navi %>%
+  group_by(ID) %>%
+  summarise(avg_distance = mean(move_distance_from_cs, na.rm = TRUE), .groups = "drop")
+
+print("avg distance kept from CS+")
+mean(dst$avg_distance)
+sd(dst$avg_distance)
+```
+
+
+#Worry/Iou keep more distance from CS+
+```{r}
+navi_counts <- df %>%
+  filter(state == "navigating") %>%
+  group_by(ID,sticsa_score, sticsa_cognitive,sticsa_somatic,tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score,F1iip, F2iip, F3iip) %>%
+  summarise(
+    avg_distance = mean(move_distance_from_cs, na.rm = TRUE),.groups = "drop"
+  )
+
+navi_long <- navi_counts %>%
+  pivot_longer(
+    cols = -c(ID, avg_distance),
+    names_to = "questionnaire",
+    values_to = "score"
+  )
+
+long_F <- navi_long %>% filter(questionnaire %in% c("F1iip", "F2iip", "F3iip"))
+ggplot(long_F, aes(x = score, y = avg_distance)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#FFC857") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") +facet_wrap(~questionnaire, scales = "free_x", ncol = 4) +theme_minimal() +theme(aspect.ratio = 1,plot.title = element_text(hjust = 0.5)) + labs(title = "Relationship Between Factor Scores and distance from CS+",x = "Factor Score",y = "Average distance from CS+")
+```
+
+```{r}
+corr_results <- navi_long %>%
+  group_by(questionnaire) %>%
+  summarise(
+    cor_test = list(cor.test(score, avg_distance, use = "complete.obs", method = "pearson")),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidy_res = map(cor_test, broom::tidy)
+  ) %>%
+  unnest(tidy_res) %>%
+  select(questionnaire, estimate, p.value, conf.low, conf.high)
+
+corr_results
+```
+
+
+#Correlation of avg. n moves and euclidean distance 
+```{r}
+dst <- navi %>%
+  group_by(ID) %>%
+  summarise(
+    avg_distance = mean(move_distance_from_cs, na.rm = TRUE),
+    avg_pathlength = mean(nMoves, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cor.test(dst$avg_distance, dst$avg_pathlength)
+
+ggplot(dst, aes(x = avg_distance, y = avg_pathlength)) +geom_point() + geom_smooth(method = "lm", se = TRUE, color = '#FFC857') +  labs(x = "Average euc distance", y = "Average pathlength") +theme_minimal() +theme(aspect.ratio = 1)+ggtitle("Euc distance to CS+ vs nMoves")
+```
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### H1: Does generalisation impact avoidance
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#Overall, higher ratings associated with longer paths (both pre and post ratings)
+```{r}
+rate_df <- df[(df$state == "ratingPRE"),] %>%
+  group_by(ID) %>%
+  summarise(mean_rate = mean(rating, na.rm = TRUE), .groups = "drop")
+
+navi_counts <- df %>%
+  filter(state == "navigating") %>%
+  group_by(ID) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), .groups = "drop")
+
+joint_df <- left_join(rate_df, navi_counts, by = "ID")
+
+ggplot(joint_df, aes(x = mean_rate, y = nMoves)) +geom_point() + geom_smooth(method = "lm", se = TRUE, color = "#91316D") +labs(x = "Ratings (pre)", y = "Path length") +theme_minimal() +theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "center", label.y.npc = "top") +theme(aspect.ratio = 1)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+cor.test(joint_df$nMoves, joint_df$mean_rate)
+```
+
+
+
+# Visited by distance 
+```{r}
+#removes duplicates i.e. bump into border
+cleaned_data <- df %>%
+  filter(state == "navigating") %>%
+  group_by(ID, run, trial, move_row, move_col) %>%
+  mutate(keep = ifelse((move_row == 1 | move_row == 11 | move_col == 1 | move_col == 11),
+                       row_number() == 1, TRUE)) %>%
+  filter(keep) %>%
+  ungroup()
+
+dfp <- cleaned_data %>%
+  mutate(
+    distance_to_cs = sqrt((move_row - csX)^2 + (move_col - csY)^2),
+    distance_bin = round(distance_to_cs)
+  ) %>%
+  group_by(ID, distance_bin, run) %>%
+  summarise(visits = n(), .groups = "drop")
+
+dfs <- dfp %>%
+  group_by(distance_bin) %>%
+  summarise(
+    mean_visits = mean(visits),
+    se_visits = sd(visits) / sqrt(n()),
+    .groups = "drop"
+  )
+
+
+ggplot(dfs, aes(x = distance_bin, y = mean_visits)) +geom_bar(stat = "identity", fill = "#91316D") +geom_errorbar(aes(ymin = mean_visits - se_visits,ymax = mean_visits + se_visits), width = 0.2, color = "black") +labs(x = "Distance from storm",y = "Average Number of Visits") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/visits_distance.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+##How often was CS+ visited? 
+```{r}
+# proportion of runs/trials where CS+ (distance 0) was visited at least once
+visited_cs <- cleaned_data %>%
+  mutate(distance_to_cs = sqrt((move_row - csX)^2 + (move_col - csY)^2)) %>%
+  group_by(ID, run, trial) %>%
+  summarise(cs_visited = any(distance_to_cs == 0), .groups = "drop") %>%
+  summarise(
+    prop_visited = mean(cs_visited),
+    total_trials = n(),
+    n_visited = sum(cs_visited)
+  )
+
+visited_cs
+```
+
+
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#Location specific effects
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+```{r}
+#subset rated tiles
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+df <- df %>%
+  mutate(distance = map2_dbl(ratingCoordinate, csPosition, euclidean_distance))
+
+df_pre_avg <- df %>%
+  filter(state == "ratingPRE") %>%
+  group_by(ID, run, distance, rateX, rateY, sticsa_score, sticsa_cognitive,sticsa_somatic,ius_score, tics_score, pswq_score, idas_score, cape_scoredistressed, cape_scorefeel,F1iip, F2iip, F3iip) %>%
+  summarise(ratingPRE = mean(rating, na.rm = TRUE), .groups = "drop")
+
+df_by_ppt <- df %>%
+  filter(state == "navigating") %>%
+  mutate(
+    distance = round(sqrt((move_row - csX)^2 + (move_col - csY)^2))
+  ) %>%
+  group_by(ID, move_col, move_row, run) %>%
+  summarise(visits = n(), .groups = "drop")
+
+df_by_ppt$rateX <- df_by_ppt$move_row
+df_by_ppt$rateY <- df_by_ppt$move_col
+
+#matching each location (rateX/rateY with visited information!)
+joint_df <- left_join(df_pre_avg, df_by_ppt, by = c("ID", "rateX", "rateY", "run"))
+joint_df$visits[is.na(joint_df$visits)] <- 0 #assign 0 to never visited
+#Now df = for each ID each location rated and visited
+```
+
+
+#Association of rated/visited depends on distance
+```{r}
+sdf <- joint_df %>%
+  group_by(ID, distance) %>%
+  summarise(
+    mean_distance = mean(distance, na.rm = TRUE),
+    mean_visits = mean(visits, na.rm = TRUE),  # summarise visits too
+    .groups = "drop"
+  )
+
+ggplot(sdf, aes(x = mean_distance, y = mean_visits )) + geom_point(alpha = 0.7) + geom_smooth(method = "lm", se = TRUE, color = "#66D9FF") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+ggtitle("The further from the storm the more visits")
+```
+
+#Rating*visits is distance dependent
+```{r}
+sdf <- joint_df %>%
+  group_by(rateX, rateY) %>%
+  summarise(
+    mean_rating = mean(ratingPRE, na.rm = TRUE),
+    mean_visits = mean(visits, na.rm = TRUE),  # summarise visits too
+    .groups = "drop"
+  )
+
+ggplot(sdf, aes(x = mean_rating, y = mean_visits )) +
+  geom_point(alpha = 0.7) +  # Scatter plot points
+  geom_smooth(method = "lm", se = TRUE, color = "#91316D") +  # Regression line
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+labs(x = "Rating (pre)",y = "Number of Visits") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/visits_rating.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+cor.test(sdf$mean_rating,sdf$mean_visits,method = "pearson")
+```
+
+#Do people differ in association of ratings and visits?
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+```{r}
+# correlation x run & ID
+sdf <- joint_df %>%
+  group_by(ID, rateX, rateY, F1iip, F2iip, F3iip) %>%
+  summarise(
+    mean_rating = mean(ratingPRE, na.rm = TRUE),
+    mean_visits = mean(visits, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(sdf, aes(x = mean_rating, y = mean_visits, group = ID)) +geom_smooth(method = "lm", se = FALSE, color = "#91316D", linewidth = 0.5) +theme_minimal(base_size = 13) +labs(x = "Rating (pre)",y = "Number of Visits") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/visits_rating_individual.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+#check direction
+```{r}
+cor_results <- sdf %>%
+  group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(
+    cor_val = cor(mean_rating, mean_visits, use = "complete.obs"),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(cor_val)) %>%
+  mutate(cor_sign = if_else(cor_val > 0, "positive", "negative"))
+
+# Count positive and negative correlations
+cor_summary <- cor_results %>%
+  count(cor_sign) %>%
+  mutate(percent = n / sum(n) * 100)
+
+cor_summary
+
+positive_IDs <- unique(cor_results$ID[cor_results$cor_sign == "positive"])
+```
+
+```{r}
+sdf2 <- sdf %>%
+  left_join(cor_results %>% select(ID, F1iip, F2iip, F3iip, cor_sign),
+            by = c("ID", "F1iip", "F2iip", "F3iip"))
+
+ggplot(sdf2, aes(x = mean_rating, y = mean_visits, group = ID, color = cor_sign)) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.5) +
+  theme_minimal(base_size = 13) +
+  labs(x = "Rating (pre)", y = "Number of Visits") +
+  theme_classic() +
+  theme(aspect.ratio = 1,
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.position = "none") +
+  scale_color_manual(values = c("positive" = "#090049",
+                                "negative" = "#91316D"))
+
+#ggsave(paste0(data_path, "/output/Plots/visits_rating_individualalternative.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+```{r}
+
+sdf <- joint_df %>%
+  group_by(ID, run, rateX, rateY, F1iip, F2iip, F3iip) %>%
+  summarise(
+    mean_rating = mean(ratingPRE, na.rm = TRUE),
+    mean_visits = mean(visits, na.rm = TRUE),
+    .groups = "drop"
+  )
+cor_run <- sdf %>%
+  group_by(ID, run, F1iip, F2iip, F3iip) %>%
+  summarise(
+    cor_val = cor(mean_rating, mean_visits, use = "complete.obs"),
+    .groups = "drop"
+  )
+
+cor_results <- cor_run %>%
+  group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(
+    cor_val = mean(cor_val, na.rm = TRUE),
+    sd_cor = sd(cor_val, na.rm = TRUE),
+    n_runs = sum(!is.na(cor_val)),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(cor_val)) %>%
+  mutate(cor_sign = if_else(cor_val > 0, "positive", "negative"))
+
+
+cor_summary <- cor_results %>%
+  count(cor_sign) %>%
+  mutate(percent = n / sum(n) * 100)
+
+cor_summary
+
+# Step 4: Extract IDs with positive correlation
+positive_IDs <- unique(cor_results$ID[cor_results$cor_sign == "positive"])
+
+```
+
+
+```{r}
+#do positive ones show differences in rating? No
+rdf <- df[df$state == "ratingPRE",]
+df_rate <- rdf %>%
+  group_by(ID) %>%
+  summarise(
+    mean_rating = mean(rating), 
+    .groups = "drop"
+  ) 
+
+cdf <- cor_results %>%
+  group_by(ID) %>%
+  summarise(
+    mean_cor = mean(cor_val), 
+    .groups = "drop"
+  ) 
+
+cdf <- cdf %>%
+  left_join(df_rate, by = "ID")
+
+cdf <- cdf %>%
+  mutate(cor_group = if_else(mean_cor > 0, "positive", "negative"))
+
+t.test(mean_rating ~ cor_group, data = cdf)
+```
+
+
+
+```{r}
+#are the positive ones the ones that use shorter paths? 
+
+navi <- df[df$state == "navigating",]
+df_moves <- navi %>%
+  group_by(ID) %>%
+  summarise(
+    nMoves = mean(nMoves), 
+    #DistanceCS = mean(move_distance_from_cs),
+    .groups = "drop"
+  ) 
+
+cor_results <- cor_results %>%
+  left_join(df_moves, by = "ID")
+
+ggplot(cor_results, aes(x = nMoves, y = cor_val)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#91316D") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+ theme_minimal() +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+xlab('Path length')+ylab('Correlation beliefs and visits')
+
+#ggsave(paste0(data_path, "/output/Plots/corpathassociation.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+cor.test(cor_results$nMoves, cor_results$cor_val)
+```
+
+
+```{r}
+p <- ggplot(cor_results, aes(x = cor_sign, y = nMoves)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA,fill = "#91316D", alpha = 0.7) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.6)+ 
+  labs(x = "Correlation ratings:visits", y = "Path length ") +
+  theme(aspect.ratio = 1)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+p <- p + stat_compare_means(
+  aes(label = ..p.format..),
+  method = "t.test",
+  comparisons = list(c("negative", "positive"))
+)
+p
+
+t.test(nMoves ~ cor_sign, data = cor_results)
+
+#ggsave(paste0(data_path, "/output/Plots/pathbygroup.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+
+
+```{r}
+#plot 
+ggplot(cor_results, aes(x = cor_val)) +geom_histogram(bins = 10, fill = "#69b3a2", alpha = 0.7) +labs(title = "Correlation of rating x visit for each location x ID",x = "corr rating/visits",y = "Count") +theme_minimal()+theme(aspect.ratio = 1)
+
+cor_summary <- cor_results %>%
+  summarise(
+    mean_correlation = mean(cor_val, na.rm = TRUE),
+    sd_correlation = sd(cor_val, na.rm = TRUE),
+    n_participants = sum(!is.na(cor_val))
+  )
+
+cor_summary
+
+pos <- cor_results[cor_results$cor_val>0,]
+length(pos)
+```
+
+
+#No MH associated difference of association corr and mh
+```{r}
+
+cor_long <- cor_results %>%
+  pivot_longer(
+    cols = -c(ID, cor_val, cor_sign),
+    names_to = "questionnaire",
+    values_to = "score"
+  )
+
+
+long_F <- cor_long %>% filter(questionnaire %in% c("F1iip", "F2iip", "F3iip"))
+ggplot(long_F, aes(x = score, y = cor_val)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#69b3a2") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") +facet_wrap(~questionnaire, scales = "free_x", ncol = 4) +theme_minimal() +theme(aspect.ratio = 1,plot.title = element_text(hjust = 0.5))
+```
+
+#Avoidance threshold
+#Fit logistic function to data --> at which rating do ppt avoid?
+
+```{r}
+# Binarise visited / not visited
+joint_df <- joint_df %>%
+  mutate(visited = as.integer(visits > 0))
+
+# Logistic function
+logistic <- function(x, x0, k) {
+  1 / (1 + exp(-k * (x - x0)))
+}
+
+# Function to fit logistic per ID x run
+fit_logistic_model <- function(df) {
+  id <- unique(df$ID)
+  run <- unique(df$run)
+  x <- df$ratingPRE
+  y <- df$visited
+  
+  fit <- tryCatch({
+    nlsLM(
+      y ~ 1 / (1 + exp(-k * (x - x0))),
+      start = list(x0 = 50, k = 0.1),
+      lower = c(x0 = 0, k = -10),
+      upper = c(x0 = 100, k = 10),
+      control = nls.lm.control(maxiter = 200)
+    )
+  }, error = function(e) return(NULL))
+  
+  if (is.null(fit)) {
+    return(data.frame(ID = id, run = run, inflection_point = NA, slope = NA, rss = NA, r2 = NA))
+  }
+  
+  coefs <- coef(fit)
+  rss <- deviance(fit)
+  tss <- sum((y - mean(y))^2)
+  r2 <- 1 - rss / tss
+  
+  data.frame(ID = id, run = run, inflection_point = coefs["x0"], slope = coefs["k"], rss = rss, r2 = r2)
+}
+
+# Fit logistic model per ID x run
+log_res <- joint_df %>%
+  split(list(joint_df$ID, joint_df$run)) %>%
+  map_dfr(fit_logistic_model)
+
+# Average threshold and slope per participant (across runs)
+log_res_avg <- log_res %>%
+  group_by(ID) %>%
+  summarise(
+    inflection_point = mean(inflection_point, na.rm = TRUE),
+    slope = mean(slope, na.rm = TRUE),
+    sd_threshold = sd(inflection_point, na.rm = TRUE),
+    sd_slope = sd(slope, na.rm = TRUE),
+    n_runs = sum(!is.na(inflection_point)),
+    .groups = "drop"
+  )
+
+log_res_avg
+log_res = log_res_avg
+```
+
+
+
+#check fitted inflection point and slope
+```{r}
+log_res_clean <- log_res %>% filter(!is.na(inflection_point))
+mean(log_res_clean$inflection_point)
+sd(log_res_clean$inflection_point)
+mean(log_res_clean$slope)
+sd(log_res_clean$slope)
+range(log_res_clean$inflection_point)
+
+#histograms
+log_res_clean <- log_res %>% filter(!is.na(inflection_point))
+ggplot(log_res_clean, aes(x = inflection_point)) +geom_histogram(bins = 20, fill = "#69b3a2", alpha = 0.7) +labs(title = "Distribution of Inflection Points (Visit Thresholds)",x = "Inflection point (rating at p=0.5)",y = "Count") +theme_minimal()+theme(aspect.ratio = 1)
+
+ggplot(log_res_clean, aes(x = slope)) +geom_histogram(bins = 20, fill = "#69b3a2", alpha = 0.7) +labs(title = "Distribution of Slopes (Steepness of Logistic Curve)",x = "slope",y = "Count") + theme_minimal()+theme(aspect.ratio = 1)
+
+```
+
+#No association with factor 
+```{r}
+pdf <- joint_df %>%
+  group_by(ID,sticsa_score, F1iip,F2iip,F3iip) %>%
+  summarise(
+    mean_rating = mean(ratingPRE, na.rm = TRUE),
+    mean_visits = mean(visits, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+log_res_clean <- pdf %>% left_join(log_res_clean, by = "ID")
+
+log_res_long <- log_res_clean %>%
+  pivot_longer(
+    cols = c(F1iip, F2iip, F3iip),
+    names_to = "factor",
+    values_to = "score"
+  )
+
+# Slope plot
+ggplot(log_res_long, aes(x = score, y = exp(slope))) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#69b3a2") +facet_wrap(~factor, scales = "free_x") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "bottom") +ggtitle("Slope vs Factor Scores")
+
+# Inflection point plot
+ggplot(log_res_long, aes(x = score, y = inflection_point)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#69b3a2") +facet_wrap(~factor, scales = "free_x") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "bottom") +ggtitle("Inflection Point vs Factor Scores")
+```
+
+
+
+#visualise fitted functions
+```{r}
+joint_df_pred <- joint_df %>%
+  left_join(log_res, by = "ID")
+
+# Generate predicted curves + slope category
+curve_data <- joint_df_pred %>%
+  group_by(ID, sticsa_score) %>%
+  summarise(
+    inflection_point = first(inflection_point),
+    slope = first(slope)
+  ) %>%
+  filter(!is.na(inflection_point)) %>%
+  mutate(
+    slope_sign = if_else(slope > 0, "Slope > 0", "Slope ≤ 0")  # add slope category
+  ) %>%
+  rowwise() %>%
+  mutate(data = list(
+    tibble(
+      ratingPRE = seq(0, 100, length.out = 200),
+      pred = 1 / (1 + exp(-slope * (ratingPRE - inflection_point)))
+    )
+  )) %>%
+  unnest(data)
+
+ggplot(curve_data, aes(x = ratingPRE, y = pred, group = ID)) +geom_line(color = "#91316D", alpha = 0.4) +facet_wrap(~ slope_sign) +labs(x = "Rating (pre)",y = "Predicted Probability of Visiting") +theme_minimal(base_size = 13) +theme(aspect.ratio = 1)
+
+log_res %>%
+  mutate(slope_sign = if_else(slope > 0, "positive", "negative")) %>%
+  count(slope_sign)
+
+ggplot(curve_data, aes(x = ratingPRE, y = pred, group = ID)) +geom_line(alpha = 0.4, color = "#91316D") +labs(x = "Rating", y = "Predicted Probability of Visiting") +theme_minimal(base_size = 13) +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/log_functions.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+```{r}
+log_res_clean <- log_res %>%
+  filter(!is.na(slope)) %>%
+  mutate(slope_sign = if_else(slope > 0, "positive", "negative"))
+
+slope_summary <- log_res_clean %>%
+  count(slope_sign) %>%
+  mutate(percent = n / sum(n) * 100)
+
+slope_summary
+
+positive_slope_IDs <- unique(log_res_clean$ID[log_res_clean$slope_sign == "positive"])
+```
+
+
+```{r}
+##again, are positive slopes the ones that take shortest paths? Yes
+navi <- df[df$state == "navigating",]
+df_moves <- navi %>%
+  group_by(ID) %>%
+  summarise(
+    nMoves = mean(nMoves), 
+    #DistanceCS = mean(move_distance_from_cs), 
+    .groups = "drop"
+  ) 
+
+log_res_clean <- log_res_clean %>%
+  left_join(df_moves, by = "ID")
+
+ggplot(log_res_clean, aes(x = nMoves, y = exp(slope))) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#69b3a2") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+ theme_minimal()+theme(aspect.ratio = 1,plot.title = element_text(hjust = 0.5))+ggtitle("are the ones that have positive slopes taking shortest paths?")+geom_hline(yintercept = 1)
+```
+
+```{r}
+# do shorter paths take sig. less time? No 
+#navi <- df[df$state == "navigating",]
+df_moves <- navi %>%
+  group_by(ID) %>%
+  summarise(
+    nMoves = mean(nMoves), 
+    timeMoves = mean(move_time), 
+    #DistanceCS = mean(move_distance_from_cs), 
+    .groups = "drop"
+  ) 
+
+ggplot(df_moves, aes(x = nMoves, y = timeMoves)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#69b3a2") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+ theme_minimal()+theme(aspect.ratio = 1,plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+```{r}
+combined_df <- log_res_clean %>%
+  left_join(cor_results %>% select(ID, cor_val), by = "ID")
+
+ggplot(combined_df, aes(x = cor_val, y = exp(slope))) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "#69b3a2")+theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "bottom") +ggtitle("Fitted slope (logistic function) vs corr rating:visits")+geom_hline(yintercept = 1) + geom_vline(xintercept = 0)
+```
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### H2 - Visits: Does avoiding change ratings?
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#Corr. ratings pre:post navigation
+```{r}
+df_rte_wide <- df %>%
+  filter((state == "ratingPRE" | state == "ratingPOST") & Match == 1) %>%
+  group_by(ID, state) %>%
+  summarise(av_rate = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = state, values_from = av_rate)  # Convert to wide format
+
+ggplot(df_rte_wide, aes(x = ratingPRE, y = ratingPOST)) +geom_point(color = "black", alpha = 0.7) + geom_smooth(method = "lm", color = "#090049", se = TRUE) +labs(x = "Rating (pre)", y = "Rating (post)")+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top")+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/prepost.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+cor.test(df_rte_wide$ratingPRE, df_rte_wide$ratingPOST)
+```
+
+
+#Change POST-PRE score (subset rated pre and post)
+```{r}
+df_pre_avg <- df %>%
+  filter(state == "ratingPRE") %>%
+  group_by(ID, run, distance,sticsa_score, sticsa_cognitive,sticsa_somatic,tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score,F1iip, F2iip, F3iip) %>%
+  summarise(ratingPRE = mean(rating, na.rm = TRUE), .groups = "drop")
+
+# get post ratings that match pre locations
+df_post <- df %>%
+  filter(state == "ratingPOST" & Match == 1) %>%
+  select(ID, run, distance, ratingPOST = rating)
+
+df_wide <- full_join(df_pre_avg, df_post, by = c("ID", "run", "distance"))
+df_wide$changeRatings = df_wide$ratingPOST-df_wide$ratingPRE
+
+df_wide_id <- df_wide %>%
+  group_by(ID) %>%
+  summarise(av_change = mean(changeRatings, na.rm = TRUE), .groups = "drop")
+
+ggplot(data = df_wide_id, aes(x = "", y = av_change)) +
+geom_boxplot(fill = "#090049", alpha = 0.6)+geom_point()+ylab("Pre-post")+theme_minimal()+xlab("change")+theme(aspect.ratio = 1)+
+  labs(x = "Change POST-PRE", y = "", title = "Post-Pre")
+
+t.test(df_wide_id$av_change, mu = 0)
+cohens_d(df_wide_id$av_change, mu = 0)
+
+mean(df_wide$changeRatings, na.rm = TRUE)
+sd(df_wide$changeRatings, na.rm = TRUE)
+```
+
+```{r}
+#account for rating provided in the first place
+df_wide_id <- df_wide %>%
+  group_by(ID) %>%
+  summarise(av_change = mean(changeRatings, na.rm = TRUE), 
+            av_rating = mean(ratingPRE, na.rm = TRUE), 
+            .groups = "drop")
+
+ggplot(df_wide_id, aes(x = av_change, y = av_rating)) +
+  geom_point(color = "black", alpha = 0.7) + 
+  geom_smooth(method = "lm", color = "#090049", se = TRUE) + 
+  theme_minimal() +
+  theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "bottom")
+```
+
+
+
+### Does visiting a specific location change ratings?
+```{r}
+#get POST-PRE CHANGE
+df_pre_avg <- df %>%
+  filter(state == "ratingPRE") %>%
+  group_by(ID, run, distance, rateX, rateY, sticsa_score, sticsa_cognitive,sticsa_somatic,ius_score, tics_score, pswq_score, idas_score, cape_scoredistressed, cape_scorefeel, F1iip, F2iip, F3iip
+) %>%
+  summarise(ratingPRE = mean(rating, na.rm = TRUE), .groups = "drop")
+
+df_post <- df %>%
+  filter(state == "ratingPOST" & Match == 1) %>% #only matching ones
+  select(ID, run, distance, rateX, rateY, ratingPOST = rating)
+
+df_wide <- full_join(df_pre_avg, df_post, by = c("ID", "run", "distance", "rateX", "rateY"))
+df_wide$changeRatings = df_wide$ratingPOST-df_wide$ratingPRE
+df_wide <- df_wide[!is.na(df_wide$changeRatings), ]
+
+
+df_by_ppt <- df %>%
+  filter(state == "navigating") %>%
+  mutate(
+    distance = round(sqrt((move_row - csX)^2 + (move_col - csY)^2))
+  ) %>%
+  group_by(ID, move_col, move_row, run) %>%
+  summarise(visits = n(), .groups = "drop")
+
+df_by_ppt$rateX <- df_by_ppt$move_row
+df_by_ppt$rateY <- df_by_ppt$move_col
+
+
+joint_df <- left_join(df_wide, df_by_ppt, by = c("ID", "rateX", "rateY", "run"))
+joint_df$visits[is.na(joint_df$visits)] <- 0 #assign 0 to never visited
+```
+
+
+
+#Split into visited/never visited
+```{r}
+# (avoidance factor) 
+joint_df$avoided <- NA
+joint_df$avoided[joint_df$visits > 0] <- "visited"
+joint_df$avoided[joint_df$visits == 0] <- "avoided"
+
+counts_contrasts <- joint_df %>%
+  count(avoided)
+
+ggplot(counts_contrasts, aes(x = avoided, y = n, fill = factor(avoided))) +geom_bar(stat = "identity", position = "dodge") +labs(x = "", y = "Count", fill = "Avoided") +theme_classic()+scale_fill_brewer(palette = "Set1", name = "Avoided")+theme(aspect.ratio = 1) + scale_color_manual(values = c("#66D9FF", "#ff00ff58"))+ scale_fill_manual(values = c("#66D9FF", "#ff00ff58"))
+```
+
+
+#Visiting decreases ratings post, in the absence of feedback
+```{r}
+joint_df$avoided <- factor(joint_df$avoided, levels = c("avoided", "visited"))
+df_summary <- joint_df %>%
+  group_by(ID, avoided) %>%
+  summarise(mean_change = mean(changeRatings, na.rm = TRUE), .groups = "drop")
+
+p <- ggplot(df_summary, aes(x = avoided, y = mean_change)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA, fill= "#090049", alpha = 0.7) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(x = "Avoided", y = "Change in ratings", fill = "Avoided") +
+  theme(aspect.ratio = 1)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+
+p <- p + stat_compare_means(
+  aes(label = ..p.format..),
+  method = "t.test",
+  comparisons = list(c("avoided", "visited")),
+  paired = TRUE,
+  group.by = "ID"
+)
+p
+
+#ggsave(paste0(data_path, "/output/Plots/avoidvisit.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+t.test(mean_change~avoided, data = df_summary, paired = TRUE)
+cohens_d(mean_change~avoided, data = df_summary)
+```
+
+
+# Change models: basic
+```{r}
+#~~~~~ binarised visited/avoided
+m.av2<- lmer(data=joint_df, changeRatings ~ avoided*distance +run+(1+avoided|ID)) 
+car::Anova(m.av2,type = "II") #avoided & run effect
+summary(m.av2)
+
+#controlling for initial value
+m.av_cont<- lmer(data=joint_df, changeRatings ~ avoided*distance + ratingPRE+run+(1+avoided|ID)) 
+car::Anova(m.av_cont,type = "II") #avoided & run effect
+summary(m.av_cont)
+effectsize::eta_squared(m.av_cont, alternative = "two.sided")
+
+```
+
+
+```{r}
+#continuous (accounting for rating at beginning)
+m.visits.basic_cnt <- lmer(data = joint_df, changeRatings ~ visits*distance + ratingPRE+run + (1|ID))
+car::Anova(m.visits.basic_cnt,type = "II") 
+summary(m.visits.basic_cnt)
+effectsize::eta_squared(m.visits.basic_cnt, alternative = "two.sided")
+
+
+(distlist <- list( distance = c(0,1,2,3,4,5)))
+slopes <- modelbased::estimate_slopes(m.visits.basic_cnt, trend = "visits", at = distlist) 
+plot(slopes)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+ggplot(data = slopes, aes(x = distance, y = Coefficient)) +
+  geom_ribbon(aes(ymin = CI_low, ymax = CI_high), fill = "grey", alpha = 0.2) +
+  geom_line(color = "#090049", size = 0.9) +
+  geom_hline(yintercept = 0, color = "black", linetype = "dashed", size = 0.5) + 
+  theme_classic() +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/avoidvisiteffect.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+# MH: No effects on change by mh
+```{r}
+#~~~~~~~Factor 
+joint_df$avoided_scaled <- joint_df$avoided
+joint_df$sticsa_scaled <- joint_df$sticsa_score
+
+m.fa2<- lmer(data=joint_df, changeRatings ~ avoided*distance*F1iip+ avoided*distance*F2iip + avoided*distance*F3iip+run + (1|ID)) 
+
+car::Anova(m.fa2,type = "II")
+car::vif(m.fa2,type = "II")
+summary(m.fa2)
+
+#~~~~~~~~~~~~ Does how much is visited matter for factor? NO
+
+m.av4<- lmer(data=joint_df, changeRatings ~ visits*distance*F1iip + visits*distance*F2iip +visits*distance*F3iip +run + (1|ID))
+car::Anova(m.av4,type = "II") 
+summary(m.av4)
+```
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### Model bits
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Fitterd parameters
+```{r}
+dflst <- read.csv(paste0(data_path, "/output/GP_parameters/params&fitBOTH.csv"), header = TRUE)
+
+dflst <- dflst %>%
+  select(ID, run, model, ratings, WAIC, mean, Unnamed..0) %>%
+  pivot_wider(
+    names_from = Unnamed..0, 
+    values_from = mean
+  )
+
+dfp <- dflst %>%
+  group_by(ID, ratings, model) %>%
+  summarise(mean_ls = mean(ls_subject_transformed),
+            mean_peak = mean(peak_subject_transformed))
+
+#plot fitted params x model 
+
+#ls
+ggplot(data = dfp[dfp$model == "euc_rbf_peak" | dfp$model == "euc_lin_peak",], aes(x=model, y=mean_ls))+geom_boxplot(fill = "#ff00ff58")+theme_minimal() + theme(aspect.ratio = 1)+facet_grid(.~ratings)+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ggtitle("Fitted ls")
+
+#mean
+ggplot(data = dfp[dfp$model == "euc_rbf_peak" | dfp$model == "euc_lin_peak",], aes(x=model, y=mean_peak))+geom_boxplot(fill = "#ff00ff58")+theme_minimal() + theme(aspect.ratio = 1)+facet_grid(.~ratings)+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ggtitle("Fitted peak")
+```
+#ls checks: association with max, mean ratings
+```{r}
+dfp <- dflst %>%
+  group_by(ID, run, ratings, model, WAIC) %>%
+  summarise(mean_ls = mean(ls_subject_transformed),
+            mean_peak = mean(peak_subject_transformed),
+            .groups = "drop")
+dfp$state = dfp$ratings
+
+dfratings <- df[df$state == "ratingPRE",] %>%
+  group_by(ID, state, run,sticsa_score, sticsa_cognitive,sticsa_somatic,tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score,F1iip, F2iip, F3iip) %>%
+  summarise(mean_rating = mean(rating),
+            max_rating = max(rating))
+
+dfchecks <- dfratings %>%
+  left_join(dfp, by = c("ID", "run", "state"))
+```
+
+
+
+```{r}
+dfp <- dfchecks %>%
+  group_by(ID, state, model) %>%
+  summarise(mean_ls = mean(mean_ls, na.rm = TRUE),
+            mean_peak = mean(mean_peak, na.rm = TRUE),
+            mean_rating = mean(mean_rating),
+            max_rating = max(max_rating))
+
+#ls and mean 
+ggplot(data = dfp[dfp$model == "euc_rbf_peak",], aes(x = mean_rating, y = mean_ls))+geom_point()+theme_minimal() + theme(aspect.ratio = 1)+geom_smooth(method = "lm", se = TRUE, color = "#ff00ff58") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), 
+           method = "pearson", label.x.npc = "left", label.y.npc = "top")+facet_grid(state~model)+ggtitle("LS & mean ratings")
+
+
+sdf <- dfp[dfp$model == "euc_rbf_peak",]
+sdf <- sdf[sdf$state == "ratingPRE",] %>%
+  group_by(ID) %>%
+  summarise(mean_ls = mean(mean_ls, na.rm = TRUE),
+            mean_peak = mean(mean_peak, na.rm = TRUE),
+            mean_rating = mean(mean_rating),
+            max_rating = max(max_rating))
+
+cor.test(sdf$mean_rating, sdf$mean_ls)
+
+mean(sdf$mean_ls)
+sd(sdf$mean_ls)
+```
+
+#ls & mh variations (overall correlations)
+```{r}
+dfp <- dfchecks[dfchecks$state == "ratingPRE" & dfchecks$model == "euc_rbf_peak",] %>%
+  group_by(ID,sticsa_score, sticsa_cognitive,sticsa_somatic,tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score,F1iip, F2iip, F3iip) %>%
+  summarise(mean_ls = mean(mean_ls, rm.na=TRUE),
+            mean_peak = mean(mean_peak, rm.na=TRUE))
+
+
+long_df <- dfp %>%
+  pivot_longer(
+    cols = -c(ID, mean_ls),
+    names_to = "questionnaire",
+    values_to = "score"
+  )
+
+F_vars <- c("F1iip", "F2iip", "F3iip")
+dfp_nonF <- long_df %>% filter(!questionnaire %in% F_vars)
+ggplot(dfp_nonF, aes(x = score, y = mean_ls)) +geom_point(color = '#E6A3EE') +geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ questionnaire, scales = "free_x", ncol = 4) +theme_minimal() +theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(title = "LS & Questionnaire Scores")
+
+
+dfp_F <- long_df %>% filter(questionnaire %in% F_vars)
+ggplot(dfp_F, aes(x = score, y = mean_ls)) +geom_point(color = '#E6A3EE') +geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ questionnaire, scales = "free_x", ncol = 4) +theme_minimal() + theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(title = "LS & Factor scores")
+```
+
+
+
+#Correlation PEAK & mean/max rating
+```{r}
+dfp <- dfchecks %>%
+  group_by(ID, state, model) %>%
+  summarise(mean_ls = mean(mean_ls, na.rm = TRUE),
+            mean_peak = mean(mean_peak, na.rm = TRUE),
+            mean_rating = mean(mean_rating),
+            max_rating = max(max_rating))
+
+ggplot(data = dfp[dfp$model == "euc_rbf_peak",], aes(x = mean_rating, y = mean_peak))+geom_point()+theme_minimal() + theme(aspect.ratio = 1)+geom_smooth(method = "lm", se = TRUE, color = "#ff00ff58") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), 
+           method = "pearson", label.x.npc = "left", label.y.npc = "top")+facet_grid(state~model)+ggtitle("PEAK & mean rating")
+
+ggplot(data = dfp[dfp$model == "euc_rbf_peak",], aes(x = max_rating, y = mean_peak))+geom_point()+theme_minimal() + theme(aspect.ratio = 1)+geom_smooth(method = "lm", se = TRUE, color = "#ff00ff58") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+facet_grid(state~model)+ggtitle("PEAK & max")
+
+
+sdf <- dfp[dfp$model == "euc_rbf_peak",]
+sdf <- sdf[sdf$state == "ratingPRE",] %>%
+  group_by(ID) %>%
+  summarise( mean_peak = mean(mean_peak, na.rm = TRUE),
+            max_rating = max(max_rating))
+
+cor.test(sdf$max_rating, sdf$mean_peak)
+
+mean(sdf$mean_peak)
+sd(sdf$mean_peak)
+
+t.test(sdf$mean_peak, mu = 70)
+cohens_d(sdf$mean_peak, mu = 70)
+```
+
+
+
+#MH differences and peak 
+```{r}
+dfp <- dfchecks[dfchecks$state == "ratingPRE" & dfchecks$model == "euc_rbf_peak",] %>%
+  group_by(ID,sticsa_score, sticsa_cognitive,sticsa_somatic,tics_score, pswq_score, ius_score, cape_scoredistressed, cape_scorefeel, ctq_score, idas_score,F1iip, F2iip, F3iip) %>%
+  summarise(mean_peak = mean(mean_peak, rm.na=TRUE),
+            mean_ls = mean(mean_ls, rm.na=TRUE))
+
+long_df <- dfp %>%
+  pivot_longer(
+    cols = -c(ID, mean_peak),
+    names_to = "questionnaire",
+    values_to = "score"
+  )
+
+F_vars <- c("F1iip", "F2iip", "F3iip")
+dfp_nonF <- long_df %>% filter(!questionnaire %in% F_vars)
+ggplot(dfp_nonF, aes(x = score, y = mean_peak)) +geom_point(color = '#E6A3EE') + geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ questionnaire, scales = "free_x", ncol = 4) +theme_minimal() +theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(title = "PEAK & Questionnaire Scores")
+
+
+dfp_F <- long_df %>% filter(questionnaire %in% F_vars)
+ggplot(dfp_F, aes(x = score, y = mean_peak)) +geom_point(color = '#E6A3EE') +geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ questionnaire, scales = "free_x", ncol = 4) +theme_minimal() +theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(title = "PEAK & Factor scores")
+
+
+dfps <- dfp%>%
+  group_by(ID,F1iip, F2iip, F3iip) %>%
+  summarise(mean_peak = mean(mean_peak, rm.na=TRUE),
+            mean_ls = mean(mean_ls, rm.na=TRUE))
+
+cor.test(dfps$mean_peak, dfps$F1iip)
+cor.test(dfps$mean_peak, dfps$F2iip)
+cor.test(dfps$mean_peak, dfps$F3iip)
+```
+
+
+
+
+# PREDICTED MU checks
+```{r}
+dfmu <- read.csv(paste0(data_path, "/gen-avo/behavioral-modeling/MDP/fitted_mu.csv"), header = TRUE)
+head(dfmu)
+
+extract_reward <- function(x) {
+  cleaned <- gsub("\\[|\\]|\\n", " ", x)
+  nums <- as.numeric(unlist(strsplit(cleaned, "\\s+")))
+  nums <- nums[!is.na(nums)]
+  return(nums) 
+}
+
+dfmu <- dfmu %>%
+  mutate(rewards = lapply(rewards, extract_reward))
+
+dfmu <- dfmu %>%
+  mutate(max_reward = sapply(rewards, max))
+
+coords <- expand.grid(row = 1:11, col = 1:11)
+df_expanded <- dfmu %>%
+  mutate(reward_list = map(rewards, ~ as.numeric(.x))) %>% 
+  mutate(max_idx = map_int(reward_list, which.max)) %>%
+  mutate(
+    max_row = (max_idx - 1) %/% 11 + 1,
+    max_col = (max_idx - 1) %% 11 + 1
+  ) %>%
+  select(participant, run, reward_list, max_row, max_col) %>%
+  unnest_longer(reward_list, indices_to = "idx") %>%
+  mutate(
+    row = (idx - 1) %/% 11 + 1,
+    col = (idx - 1) %% 11 + 1,
+    distance = sqrt((row - max_row)^2 + (col - max_col)^2)
+  ) %>%
+  rename(reward = reward_list) %>%
+  select(participant, run, row, col, reward, distance)
+
+pre_checks <- df_expanded %>%
+  group_by(participant, distance) %>%
+  summarise(avg_reward = mean(reward, na.rm = TRUE), .groups = "drop")
+
+pre_checks_av <- pre_checks %>%
+  group_by(distance) %>%
+  summarise(avg_reward = mean(avg_reward, na.rm = TRUE), .groups = "drop")
+
+#Plot all distances 
+ggplot()+geom_point(data = pre_checks, aes(x = distance, y = avg_reward, group = participant), color = 'grey')+geom_line(data = pre_checks, aes(x = distance, y = avg_reward, group = participant), color = 'grey')+geom_line(data = pre_checks_av, aes(x = distance, y = avg_reward), color = "#090049", linewidth = 1.5)+geom_point(data = pre_checks_av, aes(x = distance, y = avg_reward), color = "#090049", size = 3, shape = 4)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+ylim(c(0,100))
+
+
+#ggsave(paste0(data_path, "/output/Plots/ratings_pre_estimated_full.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+#limit to distances we have in data
+ggplot()+geom_point(data = pre_checks[pre_checks$distance <=5 & pre_checks$distance >=1,], aes(x = distance, y = avg_reward, group = participant), color = 'grey')+geom_line(data = pre_checks[pre_checks$distance <=5 & pre_checks$distance >=1,], aes(x = distance, y = avg_reward, group = participant), color = 'grey')+geom_line(data = pre_checks_av[pre_checks_av$distance <= 5 & pre_checks_av$distance >=1,], aes(x = distance, y = avg_reward), color = "#090049", linewidth = 1.5)+geom_point(data = pre_checks_av[pre_checks_av$distance <= 5& pre_checks_av$distance >=1,], aes(x = distance, y = avg_reward), color = "#090049", size = 3, shape = 4)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))+ylab("Ratings (pre)")+xlab("Distance from storm")
+
+#ggsave(paste0(data_path, "/output/Plots/ratings_pre_estimated.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+
+```
+
+
+##MDPs#####################
+
+#Get fitted parameters
+```{r}
+
+dir_path2 <- paste0(data_path, "/fitted/mdp_fitted/")
+csv_files <- list.files(path = dir_path2,pattern = "\\.csv$",full.names = TRUE)
+
+
+dfmdp <- do.call(rbind, lapply(csv_files, read.csv, header = TRUE))
+
+#select relevant cols
+dfmdp <- dfmdp %>%
+  select(-beta_rule, -r_rule, -ll_rule, -aic_r, -bic_r)
+
+#get bestfit for each trial and ppt. 
+ll_cols <- grep("^ll", names(dfmdp), value = TRUE)
+dfmdp$best_ll <- apply(dfmdp[, ll_cols], 1, min)
+dfmdp$best_fit <- apply(dfmdp[, ll_cols], 1, function(x) ll_cols[which.min(x)])
+
+dfmdp <- dfmdp %>% 
+  filter(participant %in% df$ID)
+```
+
+#check model fit using BIC 
+```{r}
+bic_cols <- grep("^bic", names(dfmdp), value = TRUE)
+
+# sums of each ll column
+sum_bic <- colSums(dfmdp[, bic_cols], na.rm = TRUE)
+sum_bic_df <- data.frame(
+  bic_column = names(sum_bic),
+  sum_bic = as.numeric(sum_bic)
+)
+
+overall_mean <- mean(sum_bic_df$sum_bic)
+sum_bic_df$demeaned = sum_bic_df$sum_bic - overall_mean
+sum_bic_df <- sum_bic_df %>%
+  filter(!grepl("dyn", bic_column))
+
+ggplot(sum_bic_df, aes(x = reorder(bic_column, -demeaned), y = demeaned)) +geom_bar(stat = "identity", fill = "#090049", alpha = 0.7) +theme_classic() +labs(x = "avoidance model", y = "BIC") +theme(aspect.ratio = 2,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(angle = 45, hjust = 1, size = 14),axis.text.y = element_text(size = 14),plot.subtitle = element_text(size = 14))
+
+
+#ggsave(paste0(data_path, "/output/Plots/bestfit.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+```{r}
+bic_cols <- grep("^bic", names(dfmdp), value = TRUE)
+bic_cols <- bic_cols[!grepl("dyn", bic_cols)]
+
+summed_df <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(across(c(bic_w, bic_p, bic_baseline), sum, na.rm = TRUE))
+
+summed_df$best_bic <- apply(summed_df[, bic_cols], 1, min)
+summed_df$best_fit <- apply(summed_df[, bic_cols], 1, function(x) bic_cols[which.min(x)])
+
+
+table(summed_df$best_fit)
+```
+
+
+#Do best fit by one or other model differ in mh? IoU:modelfit
+```{r}
+df_best <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(
+    mean_bic_w = mean(bic_w, na.rm = TRUE),
+    mean_bic_p = mean(bic_p, na.rm = TRUE),
+    best_model = ifelse(mean_bic_w < mean_bic_p, "weighted", "pessimistic"),
+    .groups = "drop"
+  )
+
+df_best$ID <- df_best$participant
+
+dfj <- df_best %>%
+  left_join(dfp, by = "ID")
+
+
+t.test(F1iip ~ best_model, data = dfj)
+t.test(F2iip ~ best_model, data = dfj)
+t.test(F3iip ~ best_model, data = dfj)
+
+model <- lm(F2iip ~ best_model, data = dfj)
+car::Anova(model)
+```
+
+```{r}
+#BIC differences between best fit by one model or other and MH: pessimistic vs winning 
+
+dfmdp$diffbic <- dfmdp$bic_p - dfmdp$bic_w
+dfsum <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(diffbicPW= mean(diffbic, na.rm = TRUE),
+    .groups = "drop"
+  )
+dfsum$ID <- dfsum$participant
+
+
+dfp <- df %>%
+  group_by(ID, F1iip, F2iip, F3iip, sticsa_score) %>%
+  summarise(mean_rating = mean(rating),.groups = "drop")
+
+dfchecks <- dfsum %>%
+  left_join(dfp, by = c("ID"))
+
+
+ggplot(dfchecks, aes(x = F2iip, y = diffbicPW)) +
+  geom_point(color = "black", alpha = 0.7) + 
+  geom_smooth(method = "lm", color = "#090049", se = TRUE) + 
+  theme_minimal() +
+  theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")
+
+#F2 associated with better relative fit of W? I.e acconts more for the actual ratings compared to others? 
+
+cor_test_result <- cor.test(dfchecks$diffbicPW, dfchecks$F2iip)
+cor_test_result
+```
+
+
+
+#parameters check 
+```{r}
+param_vars <- c(
+  weight_weigthed      = "weight",
+  #beta_weigthed        = "beta_w",
+  p_pessimistic        = "pessimism"
+  #beta_pessimistic     = "beta_p",
+  #r_rule               = "rule"
+  #beta_rule               = "beta_r"
+)
+
+
+dfsum <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(across(all_of(names(param_vars)), ~mean(.x, na.rm = TRUE))) %>%
+  pivot_longer(
+    cols = all_of(names(param_vars)),
+    names_to = "parameter",
+    values_to = "value"
+  ) %>%
+  mutate(parameter = factor(parameter, levels = names(param_vars), labels = param_vars))
+
+
+ggplot(dfsum %>% filter(parameter == "weight"),aes(x = "", y = value)) +geom_boxplot(fill = "grey", alpha = 0.6, outlier.shape = NA) +geom_jitter(width = 0.1, alpha = 0.6, size = 2, color="#090049") +theme_classic() +theme(aspect.ratio = 2,axis.title.x = element_blank(),axis.title.y = element_text(size = 16),axis.text = element_text(size = 14)) +ylab("Estimated weight")+ylim(0,1)
+
+#ggsave(paste0(data_path, "/output/Plots/parametersavoidanceweight.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+
+ggplot(dfsum %>% filter(parameter == "pessimism"),aes(x = "", y = value)) +geom_boxplot(fill = "grey", alpha = 0.6, outlier.shape = NA) +geom_jitter(width = 0.1, alpha = 0.6, size = 2, color="#090049") +theme_classic() +theme(aspect.ratio = 2,axis.title.x = element_blank(),axis.title.y = element_text(size = 16),axis.text = element_text(size = 14)) +ylab("Estimated pessimism")+ylim(0,1)
+
+#ggsave(paste0(data_path, "/output/Plots/parametersavoidancepessimism.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+```{r}
+# parameter averages
+mean(dfmdp$weight_weigthed)
+sd(dfmdp$weight_weigthed)
+
+mean(dfmdp$p_pessimistic)
+sd(dfmdp$p_pessimistic)
+
+
+dfsum <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(ppt_weight= mean(weight_weigthed, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+t.test(dfsum$ppt_weight, mu = 0.5)
+#cohens_d(dfmdp$ppt_weight, mu = 0.5)
+```
+
+
+```{r}
+#weight and slider response
+
+dfQuestions <- df %>%
+  filter(state == "feedback") %>%
+  group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(slider = first(slider), .groups = "drop")
+
+dfsum <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(mean_weight = mean(weight_weigthed, na.rm = TRUE), .groups = "drop")
+
+df_combined <- dfQuestions %>%
+  left_join(dfsum, by = c("ID" = "participant"))
+
+df_combined
+
+ggplot(df_combined, aes(x = as.numeric(slider), y = mean_weight)) +
+  geom_point(color = "black", alpha = 0.7) + 
+  geom_smooth(method = "lm", color = "#090049", se = TRUE) + 
+  theme_minimal() +
+  theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")
+
+
+cor_test_result <- cor.test(as.numeric(df_combined$slider), df_combined$mean_weight)
+cor_test_result
+#what is the weight question? 
+```
+
+
+
+```{r}
+#check corr beliefs and behavior and weight 
+
+sdf <- joint_df %>%
+  group_by(ID, rateX, rateY, F1iip, F2iip, F3iip) %>%
+  summarise(
+    mean_rating = mean(ratingPRE, na.rm = TRUE),
+    mean_visits = mean(visits, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cor_results <- sdf %>%
+  group_by(ID, F1iip, F2iip, F3iip) %>%
+  summarise(
+    cor_val = cor(mean_rating, mean_visits, use = "complete.obs"),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(cor_val)) %>%
+  mutate(cor_sign = if_else(cor_val > 0, "positive", "negative"))
+
+
+dfsum <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(mean_weight = mean(weight_weigthed, na.rm = TRUE), .groups = "drop")
+
+dfsum$ID <- dfsum$participant
+
+
+dfchecks <- dfsum %>%
+  left_join(cor_results, by = c("ID"))
+
+ggplot(dfchecks, aes(x = mean_weight, y = cor_val)) +
+  geom_point(color = "black", alpha = 0.7) + 
+  geom_smooth(method = "lm", color = "#090049", se = TRUE) + 
+  theme_classic() +
+  theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top")+theme(
+    aspect.ratio = 1,
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 16),
+    axis.text = element_text(size = 14))+xlab("Fitted weight")
+
+
+cor.test(dfchecks$mean_weight, dfchecks$cor_val)
+#better relative fit of the threshold model in the ones where the correlation is positive 
+
+#ggsave(paste0(data_path, "/output/Plots/weightcorr.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```

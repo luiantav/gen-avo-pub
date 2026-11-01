@@ -1,0 +1,729 @@
+---
+title: "questionnaire_data"
+author: "Lu"
+date: "2025-03-18"
+output: html_document
+---
+
+```{r}
+#renv::restore()
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+library(paletteer)
+
+here::i_am("flag_project_root.R")
+here::here()
+data_path = here::here()
+```
+
+
+```{r}
+#conversion functions
+convert_idas <- function(x) {
+    case_when(
+      x == "1 - not at all" ~ 1,
+      x == "2 - a little bit" ~ 2,
+      x == "3 - moderately" ~ 3,
+      x == "4 - quite a bit" ~ 4,
+      x == "5 - extremely" ~ 5,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+}
+
+convert_sticsa <- function(x) {
+    case_when(
+      x == "Not at All" ~ 1,
+      x == "A little" ~ 2,
+      x == "Moderately" ~ 3,
+      x == "Very much So" ~ 4,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+  }
+
+convert_ius <- function(x) {
+    case_when(
+      x == "1 - Not at all characteristic of me" ~ 1,
+      x == "3 - Somewhat characteristic of me" ~ 3,
+      x == "5 - Entirely characteristic of me" ~ 5,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+  }
+
+convert_tics<- function(x) {
+    case_when(
+      x == "Never" ~ 1,
+      x == "Rarely" ~ 2,
+      x == "Sometimes" ~ 3,
+      x == "Frequently" ~ 4,
+      x == "Always" ~ 5,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+  }
+
+convert_pswq<- function(x) {
+    case_when(
+      x == "1 - Not at all typical of me" ~ 1,
+      x == "5 - Very typical of me" ~ 5,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+}
+
+convert_ctq<- function(x) {
+    case_when(
+      x == "Never True" ~ 1,
+      x == "Rarely True" ~ 2,
+      x == "Sometimes True" ~ 3,
+      x == "Often True" ~ 4,
+      x == "Very Often True" ~ 5,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+}
+
+convert_cape<- function(x) {
+    case_when(
+      x == 'Never (If you ticked "never", please go to next question)' ~ 1,
+      x == "Not distressed" ~ 1,
+      x == "Sometimes" ~ 2,
+      x == "A bit distressed" ~ 2,
+      x == "Often" ~ 3,
+      x == "Quite distressed" ~ 3,
+      x == "Nearly always" ~ 4,
+      x == "Very distressed" ~ 4,
+      TRUE ~ as.numeric(x) # Convert numbers directly
+    )
+  }
+```
+
+
+
+
+
+
+```{r}
+srvey <- read.csv(paste0(data_path, "/data/finalcollection/questionnaires/survey.csv"), stringsAsFactors = FALSE) 
+
+srvey <- srvey %>%
+  filter(!grepl("ID", PROLIFICID)) 
+
+length(unique(srvey$PROLIFICID))
+
+```
+
+
+
+#Time taken 
+```{r}
+# Get time taken to complete task 
+time_stats <- srvey[c("PROLIFICID", "interviewtime")]
+time_stats$timetaken <- time_stats$interviewtime/60
+time_stats
+
+time_cols <- grep("(?i)time", names(srvey), value = TRUE, perl = TRUE)
+srvey <- srvey %>%
+  select(-all_of(time_cols))
+
+
+ggplot(time_stats, aes(x ="", y = timetaken)) +
+  geom_boxplot(alpha = 0.5, fill = 'darkred') + 
+  geom_point(aes(group = PROLIFICID), alpha = 0.7, size = 3) +
+  geom_line(aes(group = PROLIFICID), color = "grey", alpha = 0.5) +
+  theme_minimal() +
+  theme(aspect.ratio = 1) +
+  scale_fill_paletteer_d("MexBrewer::Casita3") +
+  labs(y = "Time in min", x = "")
+
+
+```
+
+#infrequency filter
+```{r}
+xx_cols <- grep("XX", names(srvey), value = TRUE) 
+df_infreq <- srvey %>% select(PROLIFICID, all_of(xx_cols))
+
+# List of conversion functions
+conversion_functions <- list(
+  "STICSA" = convert_sticsa,
+  "CAPE" = convert_cape,
+  "TICS" = convert_tics,
+  "CTQ" = convert_ctq,
+  "IDAS" = convert_idas,
+  "PSWQ" = convert_pswq,
+  "IOU" = convert_ius
+)
+
+# Apply the correct conversion function to each column based on its name
+df_infreq <- df_infreq %>%
+  mutate(across(
+    .cols = everything(), 
+    .fns = ~ {
+      col_name <- cur_column()
+      matching_function <- NULL  # Default to no function
+      
+      for (prefix in names(conversion_functions)) {
+        if (grepl(prefix, col_name, ignore.case = TRUE)) {
+          matching_function <- conversion_functions[[prefix]]
+          break
+        }
+      }
+      
+      if (!is.null(matching_function)) {
+        matching_function(.)
+      } else {
+        .
+      }
+    }
+  ))
+
+df_infreq
+df_pass = df_infreq
+srvey_checks <- srvey
+srvey <- srvey %>% select(-all_of(xx_cols))
+
+df_pass$STICSA.XX4. <- ifelse(
+  is.na(df_pass$STICSA.XX4.), "FAILED",
+  ifelse(df_pass$STICSA.XX4. >= 3, "PASSED", "FAILED")
+) #accepted response: "Moderately", "Very much so". 
+
+df_pass$TICS.XX1. <- ifelse(
+  is.na(df_pass$TICS.XX1.), "FAILED",
+  ifelse(df_pass$TICS.XX1. >= 4, "PASSED", "FAILED")
+) #accepted response: "Frequently", "Always"
+
+df_pass$CAPE01.XX3..1. <- ifelse(
+  is.na(df_pass$CAPE01.XX3..1.), "FAILED",
+  ifelse(df_pass$CAPE01.XX3..1. <= 2, "PASSED", "FAILED")
+) #accepted response: "Never", "Sometimes"
+
+df_pass$CTQ.XX2. <- ifelse(
+  is.na(df_pass$CTQ.XX2.), "FAILED",
+  ifelse(df_pass$CTQ.XX2. >= 4, "PASSED", "FAILED")
+) #accepted response: "Often true", "Very often true"
+
+df_pass$IDAS.XX6. <- ifelse(
+  is.na(df_pass$IDAS.XX6), "PASSED",
+  ifelse(df_pass$IDAS.XX6. <= 2, "PASSED", "FAILED")
+)
+
+df_pass$PSWQ.XX7. <- ifelse(
+  is.na(df_pass$PSWQ.XX7), "PASSED",
+  ifelse(df_pass$PSWQ.XX7 > 4, "PASSED", "FAILED")
+)
+
+df_pass$IOU.XX5. <- ifelse(
+  is.na(df_pass$IOU.XX5), "PASSED",
+  ifelse(df_pass$IOU.XX5 <= 2, "PASSED", "FAILED")
+)
+
+
+df_pass
+
+cols_to_check <- c("STICSA.XX4.", "TICS.XX1.", "CAPE01.XX3..1.", "CTQ.XX2.", "IOU.XX5.", "PSWQ.XX7.", "IDAS.XX6.")
+
+# Count PASSED and FAILED per row
+df_pass$N_PASSED <- apply(df_pass[cols_to_check], 1, function(x) sum(x == "PASSED"))
+df_pass$N_FAILED <- apply(df_pass[cols_to_check], 1, function(x) sum(x == "FAILED"))
+
+
+print(df_pass)
+# here we expect: TICS 4, CTQ 5, Cape 1, STICSA 4
+
+df_pass$checks = ifelse(df_pass$N_FAILED >2, 0, 1)
+
+dfchecks = df_pass[,c("PROLIFICID", "checks")]
+table(dfchecks$checks)
+```
+
+
+```{r}
+df_summary <- df_pass %>%
+  select(-1) %>% 
+  mutate(across(everything(), as.character)) %>%   # make all character
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Result") %>%
+  group_by(Variable, Result) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = Result, values_from = Count, values_fill = 0)
+
+df_summary
+```
+
+
+```{r}
+# Plot for STICSA.XX4.
+plot_sticsa <- ggplot(df_infreq, aes(y = PROLIFICID, x = `STICSA.XX4.`)) +
+  geom_point() + 
+  labs(title = "STICSA.XX4.", x = "STICSA.XX4.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  xlim(0, 5) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+# Plot for TICS.XX1.
+plot_tics <- ggplot(df_infreq, aes(y = PROLIFICID, x = `TICS.XX1.`)) +
+  geom_point() + 
+  labs(title = "TICS.XX1.", x = "TICS.XX1.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  xlim(0, 5) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Plot for CAPE01.XX3..1.
+plot_cape1 <- ggplot(df_infreq, aes(y = PROLIFICID, x = `CAPE01.XX3..1.`)) +
+  geom_point() + 
+  labs(title = "CAPE01.XX3..1.", x = "CAPE01.XX3..1.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  xlim(0, 5) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Plot for CTQ.XX2.
+plot_ctq <- ggplot(df_infreq, aes(y = PROLIFICID, x = `CTQ.XX2.`)) +
+  geom_point() + 
+  labs(title = "CTQ.XX2.", x = "CTQ.XX2.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  xlim(0, 5) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+# Plot for IDAS.XX6.
+plot_idas <- ggplot(df_infreq, aes(y = PROLIFICID, x = `IDAS.XX6.`)) +
+  geom_point() + 
+  labs(title = "IDAS.XX6.", x = "IDAS.XX6.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Plot for PSWQ.XX7.
+plot_pswq <- ggplot(df_infreq, aes(y = PROLIFICID, x = `PSWQ.XX7.`)) +
+  geom_point() + 
+  labs(title = "PSWQ.XX7.", x = "PSWQ.XX7.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Plot for IOU.XX5.
+plot_iou <- ggplot(df_infreq, aes(y = PROLIFICID, x = `IOU.XX5.`)) +
+  geom_point() + 
+  labs(title = "IOU.XX5.", x = "IOU.XX5.", y = "PROLIFICID") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Arrange all the plots in a grid
+grid.arrange(
+  plot_sticsa, plot_tics,
+  plot_cape1, plot_ctq,
+  plot_idas, plot_pswq,
+  plot_iou,
+  ncol = 2 
+)
+
+```
+
+
+
+```{r}
+questionnaires <- c("STICSA", "IOU", "IDAS", "TICS", "CAPE01", "CTQ", "PSWQ")
+
+for (q_prefix in questionnaires) {
+  
+  q_cols <- grep(paste0("^", q_prefix), names(srvey), value = TRUE)
+  df_subset <- srvey %>%
+    select(id, PROLIFICID, all_of(q_cols))
+  
+  assign(paste0("df_", tolower(q_prefix)), df_subset)
+}
+
+
+#IDAS recode
+
+df_idas[, -c(1,2)] <- lapply(df_idas[, -c(1,2)], convert_idas)  # Apply to all columns except id and PROLIFICID
+#recode reverse coded
+reverse_cols <- c("IDAS.IDAS27.", "IDAS.IDAS64.")
+reverse_cols <- reverse_cols[reverse_cols %in% names(df_idas)] # Ensure columns exist
+df_idas[reverse_cols] <- lapply(df_idas[reverse_cols], function(x) 5 + 1 - x)
+
+
+idas_dysphoria = c("IDAS.IDAS02.", "IDAS.IDAS05.", "IDAS.IDAS08.", "IDAS.IDAS09.", "IDAS.IDAS21.", "IDAS.IDAS31.", "IDAS.IDAS40.", "IDAS.IDAS48.", "IDAS.IDAS57.", "IDAS.IDAS61.")
+idas_lassitude = c("IDAS.IDAS06.","IDAS.IDAS29.", "IDAS.IDAS30.", "IDAS.IDAS43.","IDAS.IDAS54.","IDAS.IDAS55.")
+idas_insomnia = c("IDAS.IDAS04.","IDAS.IDAS11.","IDAS.IDAS17.","IDAS.IDAS25.","IDAS.IDAS36.","IDAS.IDAS51.")
+idas_suicidality = c("IDAS.IDAS13.","IDAS.IDAS22.","IDAS.IDAS33.","IDAS.IDAS38.","IDAS.IDAS46.","IDAS.IDAS52.")
+idas_appetiteloss = c("IDAS.IDAS01.","IDAS.IDAS26.","IDAS.IDAS60.")
+idas_appetitegain = c("IDAS.IDAS19.","IDAS.IDAS24.","IDAS.IDAS63.")
+idas_wellbeing = c("IDAS.IDAS03.","IDAS.IDAS10.","IDAS.IDAS23.","IDAS.IDAS27.","IDAS.IDAS50.","IDAS.IDAS53.","IDAS.IDAS59.","IDAS.IDAS64.")
+idas_illtemper = c("IDAS.IDAS12.","IDAS.IDAS35.","IDAS.IDAS37.","IDAS.IDAS44.","IDAS.IDAS62.")
+idas_mania = c("IDAS.IDAS67.","IDAS.IDAS71.","IDAS.IDAS77.","IDAS.IDAS83.","IDAS.IDAS87.")
+idas_euphoria = c("IDAS.IDAS72.","IDAS.IDAS78.","IDAS.IDAS88.","IDAS.IDAS92.","IDAS.IDAS97.")
+idas_panic = c("IDAS.IDAS07.","IDAS.IDAS16.","IDAS.IDAS32.","IDAS.IDAS39.","IDAS.IDAS45.","IDAS.IDAS49.","IDAS.IDAS56.","IDAS.IDAS58.")
+idas_socialanx = c("IDAS.IDAS15.","IDAS.IDAS18.","IDAS.IDAS20.","IDAS.IDAS41.","IDAS.IDAS47.","IDAS.IDAS99.")
+idas_claustrophobia = c("IDAS.IDAS74.","IDAS.IDAS80.","IDAS.IDAS84.","IDAS.IDAS90.","IDAS.IDAS94.")
+idas_traumaticintrusions = c("IDAS.IDAS14.","IDAS.IDAS28.","IDAS.IDAS34.","IDAS.IDAS42.")
+idas_traumaticavoidance = c("IDAS.IDAS73.","IDAS.IDAS79.","IDAS.IDAS89.","IDAS.IDAS93.")
+idas_checking = c("IDAS.IDAS68.","IDAS.IDAS75.","IDAS.IDAS81.")
+idas_ordering = c("IDAS.IDAS65.","IDAS.IDAS69.","IDAS.IDAS82.","IDAS.IDAS85.","IDAS.IDAS95.")
+idas_cleaning = c("IDAS.IDAS66.","IDAS.IDAS70.","IDAS.IDAS76.","IDAS.IDAS86.","IDAS.IDAS91.","IDAS.IDAS96.","IDAS.IDAS98.")
+
+
+#get overall score
+score_idas <- df_idas %>%
+  rowwise() %>%
+  mutate(idas_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE),
+         #idas_generaldepression  = sum(c_across(all_of(idas_generaldepression)), na.rm = TRUE),
+         idas_dysphoria  = sum(c_across(all_of(idas_dysphoria)), na.rm = TRUE),
+         idas_lassitude  = sum(c_across(all_of(idas_lassitude)), na.rm = TRUE),
+         idas_insomnia  = sum(c_across(all_of(idas_insomnia)), na.rm = TRUE),
+         idas_suicidality  = sum(c_across(all_of(idas_suicidality)), na.rm = TRUE),
+         idas_appetiteloss  = sum(c_across(all_of(idas_appetiteloss)), na.rm = TRUE),
+         idas_appetitegain  = sum(c_across(all_of(idas_appetitegain)), na.rm = TRUE),
+         idas_wellbeing  = sum(c_across(all_of(idas_wellbeing)), na.rm = TRUE),
+         idas_illtemper  = sum(c_across(all_of(idas_illtemper)), na.rm = TRUE),
+         idas_mania  = sum(c_across(all_of(idas_mania)), na.rm = TRUE),
+         idas_euphoria  = sum(c_across(all_of(idas_euphoria)), na.rm = TRUE),
+         idas_panic  = sum(c_across(all_of(idas_panic)), na.rm = TRUE),
+         idas_socialanx  = sum(c_across(all_of(idas_socialanx)), na.rm = TRUE),
+         idas_claustrophobia  = sum(c_across(all_of(idas_claustrophobia)), na.rm = TRUE),
+         idas_traumaticintrusions  = sum(c_across(all_of(idas_traumaticintrusions)), na.rm = TRUE),
+         idas_traumaticavoidance  = sum(c_across(all_of(idas_traumaticavoidance)), na.rm = TRUE),
+         idas_checking  = sum(c_across(all_of(idas_checking)), na.rm = TRUE),
+         idas_ordering  = sum(c_across(all_of(idas_ordering)), na.rm = TRUE),      
+         idas_cleaning  = sum(c_across(all_of(idas_cleaning)), na.rm = TRUE),              
+         
+         ) %>%  # Sum all except id & PROLIFICID
+  ungroup() %>%
+  select(id, PROLIFICID, idas_score,idas_dysphoria, idas_lassitude,idas_insomnia,idas_suicidality,idas_appetiteloss,idas_appetitegain,
+         idas_wellbeing,idas_illtemper,idas_mania,idas_euphoria,idas_panic,idas_socialanx,idas_claustrophobia,idas_traumaticintrusions,idas_traumaticavoidance,idas_checking,idas_ordering,idas_cleaning) %>%  # Keep only relevant columns
+  mutate(questionnaire = "IDAS")  # Add questionnaire label
+
+
+idas_subscales <- list(
+  "General_Depression" = c(1, 2, 5, 6, 8, 9, 11, 13, 21, 26, 27, 30, 31, 40, 48, 51, 52, 57, 61, 64),
+  "Dysphoria" = c(2, 5, 8, 9, 21, 31, 40, 48, 57, 61),
+  "Lassitude" = c(6, 29, 30, 43, 54, 55),
+  "Insomnia" = c(4, 11, 17, 25, 36, 51),
+  "Suicidality" = c(13, 22, 33, 38, 46, 52)
+)
+
+
+
+# STICSA recode
+df_sticsa[, -c(1,2)] <- lapply(df_sticsa[, -c(1,2)], convert_sticsa)
+
+#subscales
+sticsa_som <- c("STICSA.SQ013.", "STICSA.SQ017.", "STICSA.SQ009.", "STICSA.SQ019.", "STICSA.SQ010.", "STICSA.SQ004.", "STICSA.SQ003.", "STICSA.SQ005.", "STICSA.SQ016.", "STICSA.SQ011.")
+
+sticsa_cog <- c("STICSA.SQ001.", "STICSA.SQ002.", "STICSA.SQ006.", "STICSA.SQ007.", "STICSA.SQ008.","STICSA.SQ012.","STICSA.SQ014.", "STICSA.SQ015.", "STICSA.SQ018.", "STICSA.SQ020.", "STICSA.SQ021.")
+
+#get overall score
+score_sticsa <- df_sticsa %>%
+  rowwise() %>%
+  mutate(
+    sticsa_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE),
+    sticsa_somatic     = sum(c_across(all_of(sticsa_som)), na.rm = TRUE),
+    sticsa_cognitive    = sum(c_across(all_of(sticsa_cog)), na.rm = TRUE),
+        ) %>% 
+  ungroup() %>%
+  select(id, PROLIFICID, sticsa_score, sticsa_somatic, sticsa_cognitive) %>%  # Keep only relevant columns
+  mutate(questionnaire = "STICSA")  # Add questionnaire label
+score_sticsa
+
+
+
+#IUS recode
+df_iou[, -c(1,2)] <- lapply(df_iou[, -c(1,2)], convert_ius)
+
+#get overall score
+score_ius <- df_iou %>%
+  rowwise() %>%
+  mutate(ius_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+  ungroup() %>%
+  select(id, PROLIFICID, ius_score) %>%
+  mutate(questionnaire = "IUS")
+score_ius
+
+
+#TICS recode
+df_tics[, -c(1,2)] <- lapply(df_tics[, -c(1,2)], convert_tics)
+
+#get overall score
+score_tics <- df_tics %>%
+  rowwise() %>%
+  mutate(tics_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+  ungroup() %>%
+  select(id, PROLIFICID, tics_score) %>%
+  mutate(questionnaire = "TICS")
+score_tics
+
+
+
+
+#PSWQ recode
+df_pswq[, -c(1,2)] <- lapply(df_pswq[, -c(1,2)], convert_pswq)
+
+#get overall score
+score_pswq <- df_pswq %>%
+  rowwise() %>%
+  mutate(pswq_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+  ungroup() %>%
+  select(id, PROLIFICID, pswq_score) %>%
+  mutate(questionnaire = "PSWQ")
+score_pswq
+
+
+#CTQ recode
+df_ctq[, -c(1,2)] <- lapply(df_ctq[, -c(1,2)], convert_ctq)
+#reverse coded items 2,5,7,13,19,26,28
+reverse_cols <- c("CTQ.ctq2.", "CTQ.ctq5.", "CTQ.ctq7.", "CTQ.ctq13.", "CTQ.ctq19.", "CTQ.ctq26.", "CTQ.ctq28.")
+reverse_cols <- reverse_cols[reverse_cols %in% names(df_ctq)] # Ensure columns exist
+df_ctq[reverse_cols] <- lapply(df_ctq[reverse_cols], function(x) 5 + 1 - x)
+  
+#subscales
+ctq_phisicalabuse <- c("CTQ.ctq9.","CTQ.ctq11.","CTQ.ctq12.","CTQ.ctq15.","CTQ.ctq17.")
+ctq_emotionalabuse <- c("CTQ.ctq3.","CTQ.ctq8.","CTQ.ctq14.","CTQ.ctq18.","CTQ.ctq22.")
+ctq_sexualabuse <- c("CTQ.ctq20.","CTQ.ctq21.","CTQ.ctq23.","CTQ.ctq24.","CTQ.ctq27.")
+ctq_phisicalnegelect <- c("CTQ.ctq1.","CTQ.ctq2.","CTQ.ctq4.","CTQ.ctq6.","CTQ.ctq26.")
+ctq_emotionalneglect <- c("CTQ.ctq5.","CTQ.ctq7.","CTQ.ctq13.","CTQ.ctq19.","CTQ.ctq28.")
+
+
+score_ctq <- df_ctq %>%
+  rowwise() %>%
+  mutate(
+    # Total score: sum all items except id and PROLIFICID
+    ctq_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE),
+    
+    # Subscale sums
+    ctq_phisicalabuse     = sum(c_across(all_of(ctq_phisicalabuse)), na.rm = TRUE),
+    ctq_emotionalabuse    = sum(c_across(all_of(ctq_emotionalabuse)), na.rm = TRUE),
+    ctq_sexualabuse       = sum(c_across(all_of(ctq_sexualabuse)), na.rm = TRUE),
+    ctq_phisicalnegelect  = sum(c_across(all_of(ctq_phisicalnegelect)), na.rm = TRUE),
+    ctq_emotionalneglect  = sum(c_across(all_of(ctq_emotionalneglect)), na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(questionnaire = "CTQ") %>%
+  select(id, PROLIFICID, ctq_score, ctq_phisicalabuse, ctq_emotionalabuse, 
+         ctq_sexualabuse, ctq_phisicalnegelect, ctq_emotionalneglect)
+
+#get overall score
+#score_ctq <- df_ctq %>%
+#  rowwise() %>%
+#  mutate(ctq_score = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+#  ungroup() %>%
+#  select(id, PROLIFICID, ctq_score) %>%
+#  mutate(questionnaire = "CTQ")
+#score_ctq
+
+
+#CAPE 
+#split into 2 sub
+cols_1 <- grep("\\.\\.1\\.", names(df_cape01), value = TRUE)
+cols_2 <- grep("\\.\\.2\\.", names(df_cape01), value = TRUE)
+
+cols_1 <- c("id", "PROLIFICID", cols_1)
+cols_2 <- c("id", "PROLIFICID", cols_2)
+
+# Create separate data frames
+df_feel <- df_cape01 %>% select(all_of(cols_1))
+df_distressed <- df_cape01 %>% select(all_of(cols_2))
+
+
+#recode
+df_feel[, -c(1,2)] <- lapply(df_feel[, -c(1,2)], convert_cape)
+df_distressed[, -c(1,2)] <- lapply(df_distressed[, -c(1,2)], convert_cape)
+
+#get overall score for each 
+#score_capedistressed<- df_distressed %>%
+#  rowwise() %>%
+#  mutate(cape_scoredistressed = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+#  ungroup() %>%
+#  select(id, PROLIFICID, cape_scoredistressed) %>%
+#  mutate(questionnaire = "CAPEDistressed")
+#score_capedistressed
+
+#score_capefeel <- df_feel %>%
+#  rowwise() %>%
+#  mutate(cape_scorefeel = sum(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+#  ungroup() %>%
+#  select(id, PROLIFICID, cape_scorefeel) %>%
+#  mutate(questionnaire = "CAPEFeel")
+#score_capefeel
+
+#score is mean of items actually filled in
+score_capedistressed <- df_distressed %>%
+  rowwise() %>%
+  mutate(cape_scoredistressed = mean(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+  ungroup() %>%
+  select(id, PROLIFICID, cape_scoredistressed) %>%
+  mutate(questionnaire = "CAPEDistressed")
+
+score_capefeel <- df_feel %>%
+  rowwise() %>%
+  mutate(cape_scorefeel = mean(c_across(-c(id, PROLIFICID)), na.rm = TRUE)) %>%
+  ungroup() %>%
+  select(id, PROLIFICID, cape_scorefeel) %>%
+  mutate(questionnaire = "CAPEFeel")
+
+#sub- factors
+#cape_positive <- c()
+#cape_negative
+#cape_depressed
+```
+
+```{r}
+# Combine all sum scores into one dataframe
+
+final_scores <- list(
+  score_idas, 
+  score_sticsa, 
+  score_ius, 
+  score_tics, 
+  score_pswq, 
+  score_capedistressed, 
+  score_capefeel,
+  score_ctq
+) %>%
+  reduce(full_join, by = c("id", "PROLIFICID"))
+
+# Remove unnecessary questionnaire column (if exists)
+final_scores <- final_scores %>% select(-matches("questionnaire"))
+
+#add pass criterion
+merged_df <- merge(final_scores, dfchecks, by = "PROLIFICID")
+
+# View final merged dataframe
+head(final_scores)
+
+#write.csv(
+#  final_df,
+#  paste0(data_path, "/data/questionnaires/finalcollection/processedsurveySUBSCALE.csv"),
+#  row.names = FALSE
+#)
+
+```
+
+
+```{r}
+# Plot for idas_score
+plot_idas_score <- ggplot(final_scores, aes(x = idas_score)) +
+  geom_histogram(bins = 20, fill = "skyblue", color = "black") +  # Adjust number of bins if needed
+  labs(title = "idas_score", x = "idas_score", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Plot for sticsa_score
+plot_sticsa_score <- ggplot(final_scores, aes(x = sticsa_score)) +
+  geom_histogram(bins = 20, fill = "orange", color = "black") +  # Adjust number of bins if needed
+  labs(title = "sticsa_score", x = "sticsa_score", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Plot for ius_score
+plot_ius_score <- ggplot(final_scores, aes(x = ius_score)) +
+  geom_histogram(bins = 20, fill = "green", color = "black") +  # Adjust number of bins if needed
+  labs(title = "ius_score", x = "ius_score", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Plot for tics_score
+plot_tics_score <- ggplot(final_scores, aes(x = tics_score)) +
+  geom_histogram(bins = 20, fill = "purple", color = "black") +  # Adjust number of bins if needed
+  labs(title = "tics_score", x = "tics_score", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Plot for pswq_score
+plot_pswq_score <- ggplot(final_scores, aes(x = pswq_score)) +
+  geom_histogram(bins = 20, fill = "red", color = "black") +  # Adjust number of bins if needed
+  labs(title = "pswq_score", x = "pswq_score", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Plot for cape_scoredistressed
+plot_cape_scoredistressed <- ggplot(final_scores, aes(x = cape_scoredistressed)) +
+  geom_histogram(bins = 20, fill = "yellow", color = "black") +  # Adjust number of bins if needed
+  labs(title = "cape_scoredistressed", x = "cape_scoredistressed", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Plot for cape_scorefeel
+plot_cape_scorefeel <- ggplot(final_scores, aes(x = cape_scorefeel)) +
+  geom_histogram(bins = 20, fill = "cyan", color = "black") +  # Adjust number of bins if needed
+  labs(title = "cape_scorefeel", x = "cape_scorefeel", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+plot_ctq_score <- ggplot(final_scores, aes(x = ctq_score)) +
+  geom_histogram(bins = 20, fill = "pink", color = "black") +  # Adjust number of bins if needed
+  labs(title = "ctq_score", x = "ctq_score", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+
+# Arrange all the plots in a grid (adjust ncol as needed)
+grid.arrange(plot_idas_score, plot_sticsa_score, plot_ius_score, plot_tics_score,
+             plot_pswq_score, plot_cape_scoredistressed, plot_cape_scorefeel, plot_ctq_score,
+             nrow = 3, ncol = 3) 
+
+
+
+
+
+```
+
+
+#make df for factor analysis
+```{r}
+#srvey <- read.csv(survey_path, stringsAsFactors = FALSE)
+xx_cols <- grep("XX", names(srvey), value = TRUE) 
+conversion_functions <- list(
+  "STICSA" = convert_sticsa,
+  "CAPE" = convert_cape,
+  "TICS" = convert_tics,
+  "CTQ" = convert_ctq,
+  "IDAS" = convert_idas,
+  "PSWQ" = convert_pswq,
+  "IOU" = convert_ius
+)
+
+excluded_cols <- unique(c(
+  xx_cols,
+  "id", "submitdate", "lastpage", "startlanguage", "seed", "startdate", "datestamp", "refurl","interviewtime","groupTime103898","PROLIFICIDTime", "groupTime109264","STICSATime","groupTime103894","IOUTime","groupTime104622","IDASTime","groupTime105103","TICSTime","groupTime105108","CAPE01Time","groupTime104657","CTQTime","groupTime109282","PSWQTime"
+))
+
+
+cols_to_convert <- setdiff(names(srvey), excluded_cols)
+
+# Apply conversion functions
+converted_part <- srvey %>%
+  select(all_of(cols_to_convert)) %>%
+  mutate(across(
+    everything(),
+    ~ {
+      col_name <- cur_column()
+      matching_function <- NULL
+      
+      for (prefix in names(conversion_functions)) {
+        if (grepl(prefix, col_name, ignore.case = TRUE)) {
+          matching_function <- conversion_functions[[prefix]]
+          break
+        }
+      }
+      
+      if (!is.null(matching_function)) {
+        matching_function(.)
+      } else {
+        .
+      }
+    }
+  ))
+
+
+final_df <- bind_cols(
+  srvey %>% select(all_of(excluded_cols)),
+  converted_part
+)
+
+final_df <- final_df %>%
+  select(-all_of(excluded_cols))
+
+#write.csv(
+#  final_df,
+#  paste0(data_path, "/data/questionnaires/finalcollection/processeditemsUPDATED.csv"),
+#  row.names = FALSE
+#)
+
+```
+

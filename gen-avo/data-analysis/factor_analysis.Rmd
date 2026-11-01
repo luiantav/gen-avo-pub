@@ -1,0 +1,339 @@
+---
+title: "Factor analysis of qustionnaire items"
+author: "Lui"
+date: "07/2025"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r}
+#renv::restore()
+
+# packages to be installed.
+packages <- c("psych","corrplot","ggplot2","dplyr","here","renv", "tidyr","reshape2","nFactors", "tidyverse","xtable","see","EFAtools","textshape")
+
+# Install and/or load the packages in the list.
+invisible(lapply(packages,
+  FUN = function(x) {
+    if (!require(x, character.only = T)) {
+      install.packages(x, dependencies = T)
+      library(x, character.only = T)
+    }
+  }
+))
+
+here::i_am("flag_project_root.R")
+here::here()
+data_path = here::here()
+```
+
+```{r}
+# 3 F solution
+reduced = "short3"
+
+```
+
+```{r}
+#get all items (pre-processed)
+df.allitems <- read.csv(paste0(data_path, "/data/finalcollection/questionnaires/processeditemsUPDATED.csv"), header = TRUE)
+
+# get overall scores 
+df.allscores <- read.csv(paste0(data_path, "/data/finalcollection/questionnaires/processedsurvey.csv"), header = TRUE)
+
+#get item manual 
+itemmanual <- read.csv(paste0(data_path, "/data/finalcollection/questionnaires/itemmanual.csv"), header = TRUE)
+```
+
+```{r}
+# select only those subjects that go on to be in analysis
+
+df.allscores <- df.allscores[df.allscores$checks == 1,] #subset ppt that passed infrequency items
+goodppt <- unique(df.allscores$PROLIFICID)
+df.allitems <- df.allitems[df.allitems$PROLIFICID %in% goodppt, ]
+```
+
+
+```{r}
+#missings mainly in CAPE, this is because of how it it set up on LS
+df.allitems <- df.allitems[, !grepl("CAPE", names(df.allitems))]
+df.allscores <- df.allscores[, !grepl("cape", names(df.allscores))]
+
+#subset questionnaires 
+#"IDAS", "IOU", "PSWQ"
+df.allitems <- df.allitems[, !grepl("^TICS", names(df.allitems), ignore.case = TRUE)]
+df.allscores <- df.allscores[, !grepl("^TICS", names(df.allscores), ignore.case = TRUE)]
+df.allitems <- df.allitems[, !grepl("^STICSA", names(df.allitems), ignore.case = TRUE)]
+df.allscores <- df.allscores[, !grepl("^STICSA", names(df.allscores), ignore.case = TRUE)] 
+df.allitems <- df.allitems[, !grepl("^CTQ", names(df.allitems), ignore.case = TRUE)]
+df.allscores <- df.allscores[, !grepl("^CTQ", names(df.allscores), ignore.case = TRUE)]
+
+#which(colSums(is.na(df.allitems))>0)
+length(df.allitems)
+```
+
+
+```{r}
+#convert to numeric 
+df.clean <- df.allitems
+df.clean[,2:length(df.clean)] <- df.clean[,2:length(df.clean)] %>% mutate_if(is.character, as.numeric)
+
+```
+
+
+```{r}
+#general
+corr_type = "spearman"
+nFactors = 3
+
+trait_qs <- c("idas_score", "ius_score","pswq_score")
+  strings_to_match <- c("PROLIFICID", "IDAS", "IOU", "PSWQ")
+```
+
+
+
+### Correlation of trait questionnaires
+```{r}
+df.scores <- df.allscores[colnames(df.allscores) %in% trait_qs]
+
+cdf = cor(scale(df.scores), method = c(corr_type)) #z scoring here
+colnames(cdf) <- trait_qs
+rownames(cdf) <- trait_qs
+cp <- corrplot(cdf, method='number')
+
+```
+
+
+### Correlation of single items
+```{r}
+df2 <- df.clean[, grep(paste(strings_to_match, collapse = "|"), names(df.clean))]
+names(df2)
+
+cdf <- cor(df2[,2:length(df2)], method = corr_type,use='complete.obs')
+cp <- corrplot(cdf, tl.pos = 'n', method = "color") 
+```
+
+### Factor n solutions
+```{r}
+# a/ Eigenvalues
+library(psych)
+evals <- eigen(cdf)$values 
+scree(cdf, factors = FALSE)
+#plot(evals)
+```
+
+```{r}
+# b/ Parallel analysis
+# compares the scree of factors of the observed data with that of a random data matrix of the same size as the original.
+set.seed(123) 
+resPA <- fa.parallel(scale(df2[,2:length(df2)]), cor = "cor", fa = "fa", fm = "minres")
+
+```
+
+```{r}
+# c/ Cattell-Nelson-Gorsuch indices
+# CNG scree test
+
+m <- nFactors::nCng(df2[,2:length(df2)], cor = TRUE, model = "factors", details = TRUE)
+print(m) #nCng() finds the largest k such that the first k eigenvalues are “significantly” above random.
+nf <- m$nFactors  
+
+eig_df <- data.frame(
+  Factor = seq_along(m$detail$values),
+  Eigenvalue = m$detail$values
+)
+
+eig_df$highlight <- eig_df$Factor <= nf
+
+eig_df$Factor <= nf 
+
+ggplot(eig_df, aes(x = Factor, y = Eigenvalue, color = highlight)) +
+  geom_point(size = 2) +
+  geom_line(color = "black") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey") +
+  labs(title = "Scree Plot of Eigenvalues",x = "Factor Number",y = "Eigenvalue") +
+  theme_classic(base_size = 16)+theme(aspect.ratio = 1)+ scale_color_manual(values = c("#66D9FF","#ff00ff58"))
+
+
+plotuScree(df2[,2:length(df2)], main=paste(m$nFactors," factors retained by the CNG procedure",sep=""))
+```
+
+
+```{r}
+# d/ Multiple Regression Procedure
+#computes the β indices, like their associated Student t and probability (Zoski and Jurs, 1993, 1996, p. 445). These three values can be used as three different indices for determining the number of components/factors to retain.
+# https://rdrr.io/cran/nFactors/man/nMreg.html
+m <- nMreg(df2[,2:length(df2)], cor = TRUE, model = "factors", details = TRUE)
+print(m)
+mdf <- data.frame(m$detail)
+plotuScree(df2[,2:length(df2)], main=paste(m$nFactors[1], ", ",
+                            m$nFactors[2], " or ",
+                            m$nFactors[3],
+                            " factors retained by the MREG procedures",
+                            sep=""))
+```
+
+```{r}
+# e/ Very simple structure
+#Graphic output indicates the "optimal" number of factors for different levels of complexity
+ 
+resvss <- vss(cdf, fm = "ml", n.obs = nrow(df), plot = TRUE) 
+resvss
+```
+
+
+### Method agreement procedure 
+```{r, results='asis'}
+# https://www.r-bloggers.com/2018/05/how-many-factors-to-retain-in-factor-analysis/
+
+res = parameters::n_factors(df2[,2:length(df2)], type="FA", rotation="oblimin")
+#see::plots(res)
+print(res)
+
+print(xtable(data.frame(res)), type = "html")
+dfrs <- data.frame(res)
+dfrs
+```
+
+A)  3 factor solution
+### Run factor analysis
+
+```{r}
+fa3 <- fa(cdf, nfactors = nFactors, rotate = "oblimin", fm = "ml", scores = "regression")
+fa3.load <- data.frame(unclass(fa3$loadings))
+fa3.load$varname <- rownames(fa3.load)
+fa3.load <- merge(fa3.load, itemmanual, by="varname") #add items to get content
+#fa3.load
+```
+
+```{r}
+variance_table <- as.data.frame(t(fa3$Vaccounted))
+variance_table
+```
+
+
+
+
+```{r  fig2, fig.width = 10, fig.asp = 0.8}
+plot(fa3)
+
+```
+
+
+### Factor correlations
+```{r fig3, fig.width = 10, fig.asp = 1}
+cor.plot(fa3)
+```
+
+
+### Corrleation of loading
+```{r}
+cdf = cor(as.matrix(fa3.load[,grepl( "ML",colnames(fa3.load))]), method = c("pearson"))
+cp <- corrplot(cdf,method = "number") 
+```
+
+
+```{r, fig5, fig.width = 10, fig.asp =0.5 }
+#add column with main loading factor x item
+fa3.load$manual_factor <- apply( abs(fa3.load[,colnames(fa3.load)[grepl("ML",colnames(fa3.load))]]),  1, which.max)
+fa3.load$idx <- seq(nrow(fa3.load))
+
+orig_factors = colnames(fa3.load)[grepl("ML",colnames(fa3.load))]
+
+temp <- fa3.load[,c("idx","manual_factor","item")] %>%
+pivot_wider(names_from = "manual_factor", values_from = "item")
+temp <- temp[,!(colnames(temp) %in% c("idx"))]
+temp <- temp[,paste(sort(as.integer(colnames(temp))))]
+# !!! the below assumes ordering of columns by manual factor 1,2,3
+temp <- plyr::ldply(apply(temp, 2, sort, decreasing=F),rbind)
+#temp = t(column_to_rownames(temp))
+temp = data.frame(t(temp))
+temp <- temp[!(rownames(temp) %in% c(".id")), ]
+colnames(temp) <- sprintf("F%s",seq(nFactors))
+temp <- temp[,sprintf("F%s",seq(nFactors))]
+colnames(temp) <- orig_factors
+
+```
+
+```{r}
+#find max positive, not max absolute
+fa3.load.long = fa3.load
+fa3.load.long$loading = pmax(fa3.load.long$ML1, fa3.load.long$ML2, fa3.load.long$ML3)
+fa3.load.long = fa3.load.long[,c("varname","item","manual_factor","scale", "measure","loading", "subscale","subscale_pure")]
+
+#here
+#manual 1 = MR3; manual 3 = MR2, manual 2 = MR1
+```
+
+```{r}
+fa3.load.long = fa3.load
+fa3.load.long$loading <- apply(
+  fa3.load.long[, c("ML1", "ML2", "ML3")],
+  1,
+  function(x) x[which.max(abs(x))]
+)
+fa3.load.long = fa3.load.long[,c("varname","item","manual_factor","scale", "measure","loading", "subscale","subscale_pure")]
+
+```
+
+
+```{r}
+df_long <- fa3.load %>%
+  pivot_longer(
+    cols = starts_with("ML"),
+    names_to = "ML_factor",
+    values_to = "loading"
+  )
+
+
+
+custom_colors <- c(
+  appetite_loss        = "#08519C",
+  dysphoria            = "#66D9FF",
+  well_being           = "#EDBC40",
+  insomnia             = "#8BAEE8",
+  lassitude            = "#0851E8",
+  panic                = "#9D63BA",
+  ill_temper           = "#90E0E8",
+  suicidality          = "grey",
+  traumatic_intrusions = "#EDBCBB",
+  social_anxiety       = "#4C0048",
+  appetite_gain        = "#C6E0FE",
+  ordering             = "#0EB980",
+  cleaning             = "#98B303",
+  mania                = "orange",
+  checking             = "#00B219",
+  euphoria             = "#ED7840",
+  traumatic_avoidance  = "#EDBCFF",
+  claustrophobia       = "#E863E6",
+  prospective_anxiety  = "#E8637F",
+  inhibitory_anxiety   = "#91316D",
+  worry                = "#CC33FF"
+)
+df_long <- df_long %>%
+  arrange(subscale_pure, item) %>%      # order items by subscale
+  mutate(item = factor(item, levels = unique(item)))
+
+
+ggplot(df_long %>% mutate(ML_factor=factor(ML_factor, levels=c("ML2","ML1","ML3"), labels=c("Anxious-Depression","IoU-Worry","Well-being"))), aes(x=item, y=loading, fill=subscale_pure)) + geom_bar(stat="identity") + facet_wrap(~ML_factor, ncol=1, scales="free_x", strip.position="top") + scale_fill_manual(values=custom_colors, guide=guide_legend(nrow=1, title.position="top", label.position="bottom")) + theme_classic() + theme(axis.text.x=element_blank(), axis.ticks.x=element_blank(), strip.background=element_blank(), strip.text=element_text(size=12, face="bold"), panel.spacing=unit(1,"lines"), aspect.ratio=0.1, legend.position="bottom", legend.text=element_text(angle=90), legend.spacing.x=unit(0, "pt")) + labs(x=NULL, y="Loading", fill="Subscale") + geom_hline(yintercept=0)
+
+#ggsave(filename = paste0(data_path, "/output/plots/factors.pdf"),width = 8,height = 8,device = "pdf",dpi = 700)
+```
+
+
+
+```{r}
+#get factor scores
+# Thurstone method- regression based; 
+
+fa3.scores <- factor.scores(x=df2[,2:length(df2)], f=fa3,method="Thurstone")
+scores = data.frame("id"=df2$PROLIFICID, fa3.scores$scores)
+loadings <- fa3$loadings
+
+colnames(scores) <- c("subject", "F1iip", "F2iip", "F3iip")
+#write.csv(scores, paste0(data_path, "/data/finalcollection/questionnaires/F3_solution.csv"), na = "")
+
+```
+
+

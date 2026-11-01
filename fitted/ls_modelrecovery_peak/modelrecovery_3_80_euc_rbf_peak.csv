@@ -1,0 +1,5 @@
+distances,ID,EWAIC,LOO,SIM,FIT,LS,PEAK
+"[1, 2, 3, 5]",3,-5.140582587612671,,euc_rbf_peak,euc_rbf_peak,3,80
+"[1, 2, 3, 5]",3,-5.644199401227765,-6.095137596130371,euc_rbf_peak,euc_lin_peak,3,80
+"[1, 2, 3, 5]",3,-98.59585194475949,-92.65404033660889,euc_rbf_peak,man_rbf_peak,3,80
+"[1, 2, 3, 5]",3,-77.55483722695523,-73.92842674255371,euc_rbf_peak,man_lin_peak,3,80

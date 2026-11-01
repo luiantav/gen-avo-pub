@@ -1,0 +1,30 @@
+# ======================
+# Python
+# ======================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+myenv/
+venv/
+.env/
+
+# ======================
+# R / renv
+# ======================
+renv/library/
+renv/staging/
+
+# Optional: R history / temp
+.Rhistory
+.RData
+.Ruserdata
+
+# ======================
+# OS / misc
+# ======================
+.DS_Store
+Thumbs.db
+model-fit-tools/

@@ -1,0 +1,479 @@
+---
+title: "retest_checks"
+author: "Lu"
+date: "2025-03-19"
+output: html_document
+---
+
+## Script for retest analysis 
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr) 
+library(readr)
+
+here::i_am("flag_project_root.R")
+here::here()
+data_path = here::here()
+```
+
+
+# Get data T1 & T2
+```{r}
+#Add T1/T2 as variable 
+
+df_T1 <- read.csv(paste0(data_path, "/data/retestT1/alldata.csv"),header = TRUE) %>%
+  mutate(Time = "T1")
+
+df_T2 <- read.csv(paste0(data_path, "/data/retestT2/alldata.csv"),header = TRUE) %>%
+  mutate(Time = "T2")
+
+df <- bind_rows(df_T1, df_T2)
+
+
+#Some general transformations
+# From JSON-like character vectors to actual lists
+df <- df %>% mutate(
+  csPosition = map(csPosition, ~ if (is.character(.x)) fromJSON(.x) else .x),
+  ratingCoordinate = map(ratingCoordinate, ~ if (is.character(.x)) fromJSON(.x) else .x)
+)
+
+#split coordinates for CS+ and ratings into two columns 
+df <- df %>%
+  mutate(csX = map_dbl(csPosition, 1), 
+         csY = map_dbl(csPosition, 2)) 
+
+df <- df %>%
+  mutate(
+    rateX = map_dbl(ratingCoordinate, ~ if (length(.x) == 2) .x[[1]] else 0),
+    rateY = map_dbl(ratingCoordinate, ~ if (length(.x) == 2) .x[[2]] else 0)
+  )
+
+#adjust for 1 indexing 
+df$csX = df$csX+1
+df$csY = df$csY+1
+df$rateX = df$rateX+1
+df$rateY = df$rateY+1
+length(unique(df$ppt))
+```
+
+# tag ppt that failed attention checks
+```{r}
+faile_checks <- c("553256591127375", "60916919062727", "115691198549233")
+#not done T2
+exclude_vals <- c("181158057290360")
+
+
+df <- df %>%
+  mutate(ppttype = case_when(
+    ID %in% faile_checks ~ 0,
+    TRUE ~ 1
+  ))
+
+passedcount <- df %>%
+  group_by(ppttype) %>%
+  summarise(count = n())
+passedcount
+
+df <- df[!(df$ID %in% exclude_vals), ]
+length(unique(df$ID))
+```
+
+
+
+#useful functions & main vars
+```{r}
+GRID_SIZE <- 11
+
+# Func to convert string dictionary to a valid JSON format
+parse_func <- function(x) {
+  x <- gsub("'", "\"", x)
+  parsed_list <- fromJSON(x)
+  return(unlist(parsed_list))
+}
+
+
+parse_df <- function(json_str) {
+  # Ignore `0` feedback
+  if (is.na(json_str) || json_str %in% c("", "null", "0")) {  
+    return(tibble(RUN = character(), saved = numeric()))  
+  }
+  
+  parsed_list <- tryCatch(fromJSON(json_str), error = function(e) list())
+
+  if (!length(parsed_list)) {
+    return(tibble(RUN = character(), saved = numeric()))  
+  }
+  
+  RUN <- names(parsed_list)
+  saved <- as.numeric(unlist(parsed_list))
+
+  valid_idx <- saved != 0
+  RUN <- RUN[valid_idx]
+  saved <- saved[valid_idx]
+
+  # Ensure lengths match
+  if (length(RUN) != length(saved)) {
+    return(tibble(RUN = character(), saved = numeric()))  
+  }
+  
+  tibble(RUN = RUN, saved = saved)
+}
+
+# Function to calculate Euclidean distance
+euclidean_distance <- function(coord, pos) {
+  if (length(coord) != 2 || length(pos) != 2) return(NA)
+  sqrt((coord[1] - pos[1])^2 + (coord[2] - pos[2])^2)
+}
+```
+
+
+
+Ratings 
+# SPLIT HALF  
+
+```{r}
+#PRE RATINGS, T1
+dfPRE <- df[df$state == "ratingPRE",]
+D_pre <- dfPRE[dfPRE$Time == "T1",] %>%
+  mutate(split = ifelse(run %in% c(0, 1, 2), "A", "B"))
+
+# mean_ls for each split within each ID
+D_split <- D_pre %>%
+  group_by(ID, split) %>%
+  summarise(mean_ratings = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = split, values_from = mean_ratings)
+
+# split-half correlation across IDs
+split_half_corr <- cor(D_split$A, D_split$B, use = "complete.obs")
+
+# Spearman-Brown correction
+spearman_brown <- 2 * split_half_corr / (1 + split_half_corr)
+
+print(split_half_corr)
+print(spearman_brown)
+
+p <- ggplot(D_split, aes(x = A, y = B)) +
+  geom_point(size = 3, color = "black", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  labs(
+    title = "T1/PRE: Correlation Between First and Second Half Ratings",
+    subtitle = paste("Pearson r =", round(split_half_corr, 2), 
+                     "| Spearman-Brown =", round(spearman_brown, 2)),
+    x = "Mean Rating (First Half)",
+    y = "Mean Rating (Second Half)"
+  ) +
+  theme_minimal()+theme(aspect.ratio = 1)
+
+print(p)
+
+#T2
+D_pre <- dfPRE[dfPRE$Time == "T2",] %>%
+  mutate(split = ifelse(run %in% c(0, 1, 2), "A", "B"))
+
+# mean_ls for each split within each ID
+D_split <- D_pre %>%
+  group_by(ID, split) %>%
+  summarise(mean_ratings = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = split, values_from = mean_ratings)
+
+# split-half correlation across IDs
+split_half_corr <- cor(D_split$A, D_split$B, use = "complete.obs")
+
+# Spearman-Brown correction
+spearman_brown <- 2 * split_half_corr / (1 + split_half_corr)
+
+print(split_half_corr)
+print(spearman_brown)
+
+p <- ggplot(D_split, aes(x = A, y = B)) +
+  geom_point(size = 3, color = "black", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  labs(
+    title = "T2/PRE: Correlation Between First and Second Half Ratings",
+    subtitle = paste("Pearson r =", round(split_half_corr, 2), 
+                     "| Spearman-Brown =", round(spearman_brown, 2)),
+    x = "Mean Rating (First Half)",
+    y = "Mean Rating (Second Half)"
+  ) +
+  theme_minimal()+theme(aspect.ratio = 1)
+
+print(p)
+```
+
+
+
+
+POST RATINGS 
+```{r}
+dfPOST <- df[df$state == "ratingPOST",]
+
+#T1
+D_post <- dfPOST[dfPOST$Time == "T1",] %>%
+  mutate(split = ifelse(run %in% c(0, 1, 2), "A", "B"))
+
+# mean_ls for each split within each ID
+D_split <- D_post %>%
+  group_by(ID, split) %>%
+  summarise(mean_ratings = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = split, values_from = mean_ratings)
+
+# split-half correlation across IDs
+split_half_corr <- cor(D_split$A, D_split$B, use = "complete.obs")
+
+# Spearman-Brown correction
+spearman_brown <- 2 * split_half_corr / (1 + split_half_corr)
+
+print(split_half_corr)
+print(spearman_brown)
+
+p <- ggplot(D_split, aes(x = A, y = B)) +
+  geom_point(size = 3, color = "black", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  labs(
+    title = "POST: Correlation Between First and Second Half Ratings",
+    subtitle = paste("Pearson r =", round(split_half_corr, 2), 
+                     "| Spearman-Brown =", round(spearman_brown, 2)),
+    x = "Mean Rating (First Half)",
+    y = "Mean Rating (Second Half)"
+  ) +
+  theme_minimal()+theme(aspect.ratio = 1)
+
+print(p)
+
+
+#T2
+D_post <- dfPOST[dfPOST$Time == "T2",] %>%
+  mutate(split = ifelse(run %in% c(0, 1, 2), "A", "B"))
+
+# mean_ls for each split within each ID
+D_split <- D_post %>%
+  group_by(ID, split) %>%
+  summarise(mean_ratings = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = split, values_from = mean_ratings)
+
+# split-half correlation across IDs
+split_half_corr <- cor(D_split$A, D_split$B, use = "complete.obs")
+
+# Spearman-Brown correction
+spearman_brown <- 2 * split_half_corr / (1 + split_half_corr)
+
+print(split_half_corr)
+print(spearman_brown)
+
+p <- ggplot(D_split, aes(x = A, y = B)) +
+  geom_point(size = 3, color = "black", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  labs(
+    title = "POST: Correlation Between First and Second Half Ratings",
+    subtitle = paste("Pearson r =", round(split_half_corr, 2), 
+                     "| Spearman-Brown =", round(spearman_brown, 2)),
+    x = "Mean Rating (First Half)",
+    y = "Mean Rating (Second Half)"
+  ) +
+  theme_minimal()+theme(aspect.ratio = 1)
+
+print(p)
+```
+
+
+#Retest reliability 
+
+https://cpsyjournal.org/articles/92/files/676294ae6f472.pdf
+a) correlation between T1 & T2
+b) ICCs
+[c) of summary stats (ratings) & parameters (lambda)]
+
+
+a) Summary stats: correlation between T1 & T2
+```{r}
+#ratings overall (includes PRE & POST)
+faile_checks <- c("553256591127375", "60916919062727", "115691198549233")
+dfICC <- df
+
+#exclude ppt that did not pass questionnaire checks 
+dfICC <- dfICC[!(dfICC$ppt %in% faile_checks), ]
+length(unique(dfICC$ppt))
+
+#get mean T1 & T2 ratings 
+df_corr <- dfICC %>%
+  group_by(ID, Time) %>%
+  summarise(mean_ratings = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Time, values_from = mean_ratings)
+
+
+# Correlate
+t1t2_corr <- cor(df_corr$T1, df_corr$T2, use = "complete.obs")
+res <- cor.test(df_corr$T1, df_corr$T2, use = "complete.obs", method = "pearson")
+res
+
+# Spearman-Brown correction
+spearman_brown <- 2 * t1t2_corr / (1 + t1t2_corr)
+print(t1t2_corr)
+print(spearman_brown)
+
+p <- ggplot(df_corr, aes(x = T1, y = T2)) +
+  geom_point(size = 3, color = "#090049", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  labs(
+    title = "",
+    subtitle = paste("Pearson r =", round(t1t2_corr, 2), 
+                     "\nSpearman-Brown =", round(spearman_brown, 2)),
+    x = "Outcome expectancy T1",
+    y = "Outcome expectancy T2"
+  ) +
+  theme_classic()+
+    theme(
+    aspect.ratio = 1,
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    plot.subtitle = element_text(size = 14)
+  )
+
+print(p)
+
+#ggsave(filename = "retest.png",path = file.path("..", "..", "plots"),width = 4,height = 4,dpi = 300,bg = "transparent")
+
+```
+
+
+```{r}
+library(irr)
+library(psych)
+
+faile_checks <- c("553256591127375", "60916919062727", "115691198549233")
+dfICC <- df
+dfICC <- dfICC[!(dfICC$ppt %in% faile_checks), ]
+length(unique(dfICC$ppt))
+
+
+df_testconsistency <- dfICC %>%
+  #group_by(ID, Time, csPosition, distance) %>%
+  group_by(ID, Time) %>%
+  summarise(mean_ratings = mean(rating, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Time, values_from = mean_ratings)
+head(df_testconsistency)
+
+# Run ICC(3,1) for test-retest reliability
+#We used two-way ICCs, with a fixed effect of time, and a random effect of participant. These are equivalent to ICC(A,1) and
+#ICC (C,1) (McGraw & Wong, 1996), and the consistency ICC is also known as an ICC(3,1) (Shrout &
+#Fleiss, 1979)
+
+#option 1 #0.54, 0.4 to 0.75 indicates moderate-good reliability
+icc_result <- ICC(df_testconsistency[, c("T1", "T2")])
+print(icc_result)
+
+#option 2 #0.54
+icc_pre <- icc(df_testconsistency[, c("T1", "T2")], model = "twoway", type = "consistency", unit = "single")
+print(icc_pre)
+
+```
+
+
+#How about path length?
+```{r}
+average_moves <- dfICC[dfICC$state == "navigating",] %>%
+  group_by(ID, Time) %>%
+  summarise(nMoves = mean(nMoves, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Time, values_from = nMoves)
+
+
+t1t2_corr <- cor(average_moves$T1, average_moves$T2, use = "complete.obs")
+res <- cor.test(average_moves$T1, average_moves$T2, use = "complete.obs", method = "pearson")
+res
+
+icc_result <- ICC(average_moves[, c("T1", "T2")])
+print(icc_result)
+
+#option 2 #0.54
+icc_pre <- icc(average_moves[, c("T1", "T2")], model = "twoway", type = "consistency", unit = "single")
+print(icc_pre)
+
+
+
+```
+
+
+# Reliability of lambdas. 
+
+```{r}
+dflambdaT1 <- read.csv(paste0(data_path, "/data/retestT1/fitted_LSPRE.csv"),header = TRUE)
+dflambdaT2 <- read.csv(paste0(data_path, "/data/retestT2/fittedT2_LSPRE.csv"),header = TRUE)
+
+dflambda <- rbind(dflambdaT1, dflambdaT2)
+
+
+#Split half and corr
+dfsum <- dflambda %>%
+  group_by(ID, time) %>%
+  summarise(mean_ls = mean(mean_ls, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = time, values_from = mean_ls)
+head(dfsum)
+
+# split-half correlation across IDs
+split_half_corr <- cor(dfsum$T1, dfsum$T2, use = "complete.obs")
+
+# Spearman-Brown correction
+spearman_brown <- 2 * split_half_corr / (1 + split_half_corr)
+
+print(split_half_corr)
+print(spearman_brown)
+
+p <- ggplot(dfsum, aes(x = T1, y = T2)) +
+  geom_point(size = 3, color = "#090049", alpha = 0.7) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  labs(
+    title = "",
+    subtitle = paste("Pearson r =", round(split_half_corr, 2), 
+                     "\nSpearman-Brown =", round(spearman_brown, 2))
+  ) +
+  theme_classic()+
+    theme(
+    aspect.ratio = 2,
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    plot.subtitle = element_text(size = 14),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)
+  )+xlab(expression("T1: fitted " * lambda))+ylab(expression("T2: fitted " * lambda))
+
+
+print(p)
+#ggsave(filename = "lsretest.png",path = file.path("..", "..", "plots"),width = 4,height = 4,dpi = 300,bg = "transparent")
+
+#ICC
+
+# Run ICC(3,1) for test-retest reliability
+#We used two-way ICCs, with a fixed effect of time, and a random effect of participant. These are equivalent to ICC(A,1) and
+#ICC (C,1) (McGraw & Wong, 1996), and the consistency ICC is also known as an ICC(3,1) (Shrout &
+#Fleiss, 1979)
+
+#option 1 #0.54, 0.4 to 0.75 indicates moderate-good reliability
+icc_result <- ICC(dfsum[, c("T1", "T2")])
+print(icc_result)
+
+#option 2 #0.54
+icc_pre <- icc(dfsum[, c("T1", "T2")], model = "twoway", type = "consistency", unit = "single")
+print(icc_pre)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

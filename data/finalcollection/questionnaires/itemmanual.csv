@@ -1,0 +1,318 @@
+varname,item,scale,measure,subscale,subscale_pure
+IOU.ius1.,Unforeseen events upset me greatly.,IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius2.,It frustrates me not having all the information I need.,IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius3.,One should always look ahead so as to avoid surprises.,IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius4.,"A small unforeseen event can spoil everything, even with the best of planning.",IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius5.,I always want to know what the future has in store for me.,IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius6.,I can't stand being taken by surprise.,IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius7.,I should be able to organize everything in advance.,IOU,uncertainty,prospective_anxiety,prospective_anxiety
+IOU.ius8.,Uncertainty keeps me from living a full life.,IOU,uncertainty,inhibitory_anxiety,inhibitory_anxiety
+IOU.ius9.,"When it's time to act, uncertainty paralyses me.",IOU,uncertainty,inhibitory_anxiety,inhibitory_anxiety
+IOU.ius10.,When I am uncertain I can't function very well.,IOU,uncertainty,inhibitory_anxiety,inhibitory_anxiety
+IOU.ius11.,The smallest doubt can stop me from acting.,IOU,uncertainty,inhibitory_anxiety,inhibitory_anxiety
+IOU.ius12.,I must get away from all uncertain situations.,IOU,uncertainty,inhibitory_anxiety,inhibitory_anxiety
+STICSA.SQ001.,My heart beats fast,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ002.,My muscles are tense,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ003.,I feel agonised over my problems,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ004.,I think that others won't approve of me,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ005.,I feel like I'm missing out on things because I can't make up my mind,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ006.,I feel dizzy,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ007.,My muscles feel weak,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ008.,I feel trembly and shaky,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ009.,I picture some future misfortune,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ010.,I can't get some thought out of my mind,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ011.,I have trouble remembering things,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ012.,My face feels hot,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ013.,I think the worst will happen,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ014.,My arms and legs feel stiff,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ015.,My throat feels dry,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ016.,I keep busy to avoid uncomfortable thoughts,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ017.,I cannot concentrate without irrelevant thoughts intruding,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ018.,My breathing is fast and shallow,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ019.,I worry that I cannot control my thoughts as well as I would like to,STICSA,anxiety,anxiety,cognitive_anxiety
+STICSA.SQ020.,I have butterflies in my stomach,STICSA,anxiety,anxiety,somatic_anxiety
+STICSA.SQ021.,My palms feel clammy.,STICSA,anxiety,anxiety,somatic_anxiety
+IDAS.IDAS01.,I did not have much of an appetite,IDAS,depressionanxiety,general_depression,appetite_loss
+IDAS.IDAS02.,I had little interest in my usual hobbies and activities,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS03.,I felt optimistic,IDAS,depressionanxiety,well_being,well_being
+IDAS.IDAS04.,I slept less than usual ,IDAS,depressionanxiety,insomnia,insomnia
+IDAS.IDAS05.,"I felt fidgety, restless",IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS06.,I felt exhausted,IDAS,depressionanxiety,general_depression,lassitude
+IDAS.IDAS07.,I felt a pain in my chest,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS08.,I felt depressed,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS09.,I had trouble making up my mind,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS10.,I was proud of myself,IDAS,depressionanxiety,well_being,well_being
+IDAS.IDAS11.,I had trouble falling asleep ,IDAS,depressionanxiety,general_depression,insomnia
+IDAS.IDAS12.,I was furious,IDAS,depressionanxiety,ill_temper,ill_temper
+IDAS.IDAS13.,I had thoughts of suicide,IDAS,depressionanxiety,general_depression,suicidality
+IDAS.IDAS14.,I had disturbing thoughts of something bad that happened to me,IDAS,depressionanxiety,traumatic_intrusions,traumatic_intrusions
+IDAS.IDAS15.,I felt self-conscious knowing that others were watching me,IDAS,depressionanxiety,social_anxiety,social_anxiety
+IDAS.IDAS16.,I felt dizzy or lightheaded,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS17.,I woke up early and could not get back to sleep ,IDAS,depressionanxiety,insomnia,insomnia
+IDAS.IDAS18.,I was worried about embarrassing myself socially,IDAS,depressionanxiety,social_anxiety,social_anxiety
+IDAS.IDAS19.,I thought a lot about food,IDAS,depressionanxiety,appetite_gain,appetite_gain
+IDAS.IDAS20.,I became anxious in a crowded public setting ,IDAS,depressionanxiety,social_anxiety,social_anxiety
+IDAS.IDAS21.,I blamed myself for things,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS22.,I cut or burned myself on purpose,IDAS,depressionanxiety,suicidality,suicidality
+IDAS.IDAS23.,I felt that I had accomplished a lot,IDAS,depressionanxiety,well_being,well_being
+IDAS.IDAS24.,I ate when I wasn't hungry,IDAS,depressionanxiety,appetite_gain,appetite_gain
+IDAS.IDAS25.,I woke up much earlier than usual,IDAS,depressionanxiety,insomnia,insomnia
+IDAS.IDAS26.,I felt like eating less than usual,IDAS,depressionanxiety,general_depression,appetite_loss
+IDAS.IDAS27.,I looked forward to things with enjoyment,IDAS,depressionanxiety,general_depression,well_being
+IDAS.IDAS28.,I had nightmares that reminded me of something bad that happened,IDAS,depressionanxiety,traumatic_intrusions,traumatic_intrusions
+IDAS.IDAS29.,I slept more than usual,IDAS,depressionanxiety,lassitude,lassitude
+IDAS.IDAS30.,It took a lot of effort for me to get going,IDAS,depressionanxiety,general_depression,lassitude
+IDAS.IDAS31.,I felt inadequate,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS32.,I was trembling or shaking,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS33.,I thought that the world would be better off without me,IDAS,depressionanxiety,suicidality,suicidality
+IDAS.IDAS34.,I had memories of something scary that happened,IDAS,depressionanxiety,traumatic_intrusions,traumatic_intrusions
+IDAS.IDAS35.,I felt like breaking things,IDAS,depressionanxiety,ill_temper,ill_temper
+IDAS.IDAS36.,I woke up frequently during the night ,IDAS,depressionanxiety,insomnia,insomnia
+IDAS.IDAS37.,I felt enraged,IDAS,depressionanxiety,ill_temper,ill_temper
+IDAS.IDAS38.,I hurt myself purposely,IDAS,depressionanxiety,suicidality,suicidality
+IDAS.IDAS39.,I felt faint,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS40.,I felt discouraged about things,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS41.,I found it difficult to make eye contact with people,IDAS,depressionanxiety,social_anxiety,social_anxiety
+IDAS.IDAS42.,I got upset thinking about something bad that happened,IDAS,depressionanxiety,traumatic_intrusions,traumatic_intrusions
+IDAS.IDAS43.,I had trouble waking up in the morning,IDAS,depressionanxiety,lassitude,lassitude
+IDAS.IDAS44.,I lost my temper and yelled at people,IDAS,depressionanxiety,ill_temper,ill_temper
+IDAS.IDAS45.,My heart was racing or pounding,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS46.,I thought about my own death,IDAS,depressionanxiety,suicidality,suicidality
+IDAS.IDAS47.,I found it difficult to talk with people I did not know well,IDAS,depressionanxiety,social_anxiety,social_anxiety
+IDAS.IDAS48.,I found myself worrying all the time,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS49.,I had a very dry mouth,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS50.,I felt hopeful about the future,IDAS,depressionanxiety,well_being,well_being
+IDAS.IDAS51.,I slept very poorly,IDAS,depressionanxiety,general_depression,insomnia
+IDAS.IDAS52.,I thought about hurting myself,IDAS,depressionanxiety,general_depression,suicidality
+IDAS.IDAS53.,I felt that I had a lot to look forward to,IDAS,depressionanxiety,well_being,well_being
+IDAS.IDAS54.,I felt much worse in the morning than later in the day,IDAS,depressionanxiety,lassitude,lassitude
+IDAS.IDAS55.,"I felt drowsy, sleepy",IDAS,depressionanxiety,lassitude,lassitude
+IDAS.IDAS56.,I was short of breath,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS57.,I talked more slowly than usual,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS58.,I felt like I was choking,IDAS,depressionanxiety,panic,panic
+IDAS.IDAS59.,I felt like I had a lot of interesting things to do,IDAS,depressionanxiety,well_being,well_being
+IDAS.IDAS60.,I did not feel much like eating,IDAS,depressionanxiety,appetite_loss,appetite_loss
+IDAS.IDAS61.,I had trouble concentrating,IDAS,depressionanxiety,general_depression,dysphoria
+IDAS.IDAS62.,Little things made me mad,IDAS,depressionanxiety,ill_temper,ill_temper
+IDAS.IDAS63.,I ate more than usual,IDAS,depressionanxiety,appetite_gain,appetite_gain
+IDAS.IDAS64.,I felt like I had a lot of energy,IDAS,depressionanxiety,general_depression,well_being
+IDAS.IDAS65.,I rearranged things so that they were in a certain order,IDAS,depressionanxiety,ordering,ordering
+IDAS.IDAS66.,I washed my hands excessively,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS67.,I kept racing from one activity to the next,IDAS,depressionanxiety,mania,mania
+IDAS.IDAS68.,I checked things over and over again,IDAS,depressionanxiety,checking,checking
+IDAS.IDAS69.,I felt the urge to rearrange things so that they were “just right”,IDAS,depressionanxiety,ordering,ordering
+IDAS.IDAS70.,I worried a lot about germs,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS71.,I spoke so rapidly that others could not understand me,IDAS,depressionanxiety,mania,mania
+IDAS.IDAS72.,I felt elated for no special reason,IDAS,depressionanxiety,euphoria,euphoria
+IDAS.IDAS73.,I tried not to think about bad things from my past,IDAS,depressionanxiety,traumatic_avoidance,traumatic_avoidance
+IDAS.IDAS74.,I avoided small spaces ,IDAS,depressionanxiety,claustrophobia,claustrophobia
+IDAS.IDAS75.,"I found myself checking things, even though I knew it wasn’t necessary",IDAS,depressionanxiety,checking,checking
+IDAS.IDAS76.,I avoided handling dirty things,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS77.,It felt like my mind was moving “a mile a minute”,IDAS,depressionanxiety,mania,mania
+IDAS.IDAS78.,I felt like I was “on top of the world”,IDAS,depressionanxiety,euphoria,euphoria
+IDAS.IDAS79.,I avoided situations that bring up bad memories,IDAS,depressionanxiety,traumatic_avoidance,traumatic_avoidance
+IDAS.IDAS80.,I was afraid of getting trapped in a crowd,IDAS,depressionanxiety,claustrophobia,claustrophobia
+IDAS.IDAS81.,I felt the urge to check to make sure I had done something,IDAS,depressionanxiety,checking,checking
+IDAS.IDAS82.,"I followed the same, fixed order in performing everyday tasks",IDAS,depressionanxiety,ordering,ordering
+IDAS.IDAS83.,My thoughts jumped rapidly from one idea to another,IDAS,depressionanxiety,mania,mania
+IDAS.IDAS84.,I felt anxious in small spaces,IDAS,depressionanxiety,claustrophobia,claustrophobia
+IDAS.IDAS85.,I felt compelled to follow certain rituals,IDAS,depressionanxiety,ordering,ordering
+IDAS.IDAS86.,I had difficulty touching something that was dirty,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS87.,My thoughts were moving so quickly it was hard to keep up,IDAS,depressionanxiety,mania,mania
+IDAS.IDAS88.,I had so much energy it was hard for me to sit still,IDAS,depressionanxiety,euphoria,euphoria
+IDAS.IDAS89.,I tried to ignore upsetting memories,IDAS,depressionanxiety,traumatic_avoidance,traumatic_avoidance
+IDAS.IDAS90.,I was afraid of tunnels,IDAS,depressionanxiety,claustrophobia,claustrophobia
+IDAS.IDAS91.,I had to clean myself because I felt contaminated,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS92.,I felt that I could do things that other people couldn’t,IDAS,depressionanxiety,euphoria,euphoria
+IDAS.IDAS93.,I avoided talking about bad experiences from my past,IDAS,depressionanxiety,traumatic_avoidance,traumatic_avoidance
+IDAS.IDAS94.,"I avoided tight, enclosed spaces",IDAS,depressionanxiety,claustrophobia,claustrophobia
+IDAS.IDAS95.,I had little rituals or habits that took up a lot of my time,IDAS,depressionanxiety,ordering,ordering
+IDAS.IDAS96.,I avoided using public restrooms,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS97.,I had much more energy than usual,IDAS,depressionanxiety,euphoria,euphoria
+IDAS.IDAS98.,I used an object (such as a towel) so I could avoid touching something directly,IDAS,depressionanxiety,cleaning,cleaning
+IDAS.IDAS99.,I was anxious about talking in public ,IDAS,depressionanxiety,social_anxiety,social_anxiety
+TICS.tics01.,Times where I have to postpone much needed rest and relaxation,TICS,stress,stress,stress
+TICS.tics02.,I do not receive enough appreciation for my work,TICS,stress,stress,stress
+TICS.tics03.,I make too many mistakes because I am unable to cope with my tasks ,TICS,stress,stress,stress
+TICS.tics04.,I do not have enough time to do my daily work ,TICS,stress,stress,stress
+TICS.tics05.,I have to do work that seems pointless to me,TICS,stress,stress,stress
+TICS.tics06.,There are disagreements between me and others that lead to tensions ,TICS,stress,stress,stress
+TICS.tics07.,I have to carry a lot of responsibility for others in my job ,TICS,stress,stress,stress
+TICS.tics08.,Situations in which I have to make an effort to gain others’ trust ,TICS,stress,stress,stress
+TICS.tics09.,Fear that something unpleasant might happen ,TICS,stress,stress,stress
+TICS.tics10.,There is a lack of interesting tasks to fill my day ,TICS,stress,stress,stress
+TICS.tics11.,Times where I am alone too much ,TICS,stress,stress,stress
+TICS.tics12.,Situations in which I have to make an effort to establish a good relationship with others ,TICS,stress,stress,stress
+TICS.tics13.,I have to deal with tasks I dislike,TICS,stress,stress,stress
+TICS.tics14.,I have to carry out tasks while under critical observation ,TICS,stress,stress,stress
+TICS.tics15.,I have arguments with others because they want something else than I do ,TICS,stress,stress,stress
+TICS.tics16.,Times where I cannot stop worrying ,TICS,stress,stress,stress
+TICS.tics17.,Times where I have so many appointments that I can hardly handle them ,TICS,stress,stress,stress
+TICS.tics18.,I am unable to gain approval for doing good work ,TICS,stress,stress,stress
+TICS.tics19.,Times in which I have to handle other people´s problems ,TICS,stress,stress,stress
+TICS.tics20.,"I can manage my job only insufficiently, even though I am doing the best I can ",TICS,stress,stress,stress
+TICS.tics21.,"Times, in which there is a lack of meaningful tasks ",TICS,stress,stress,stress
+TICS.tics22.,I have to manage tasks where I must be careful not to disappoint anyone ,TICS,stress,stress,stress
+TICS.tics23.,"Contact to others, where it is important to make a good impression ",TICS,stress,stress,stress
+TICS.tics24.,I can no longer handle the obligations of my job ,TICS,stress,stress,stress
+TICS.tics25.,Times in which I am consumed by worries ,TICS,stress,stress,stress
+TICS.tics26.,I have arguments with others because I do not act as they expect me to ,TICS,stress,stress,stress
+TICS.tics27.,Times in which I have to work under time pressure,TICS,stress,stress,stress
+TICS.tics28.,I have to deal too much with other people´s problems ,TICS,stress,stress,stress
+TICS.tics29.,Times in which I have no opportunity to discuss things with others ,TICS,stress,stress,stress
+TICS.tics30.,Situations in which it depends solely on me whether the contact to another person I will turn out satisfactorily ,TICS,stress,stress,stress
+TICS.tics31.,"Although I do my best, my work is not being appreciated",TICS,stress,stress,stress
+TICS.tics32.,I have to handle tasks where I have to prove successful ,TICS,stress,stress,stress
+TICS.tics33.,I have conflicts with others because they interfere in my affairs too much ,TICS,stress,stress,stress
+TICS.tics34.,Times where I am isolated from others ,TICS,stress,stress,stress
+TICS.tics35.,Times where I cannot perform as expected ,TICS,stress,stress,stress
+TICS.tics36.,Times where I cannot stop worrying ,TICS,stress,stress,stress
+TICS.tics37.,I have to deal with obligations which I inwardly disapprove of ,TICS,stress,stress,stress
+TICS.tics38.,Times where I have to fulfill too many obligations ,TICS,stress,stress,stress
+TICS.tics39.,I constantly have to be responsible for other people’s well-being ,TICS,stress,stress,stress
+TICS.tics40.,Situations in which I have to make an effort to please others ,TICS,stress,stress,stress
+TICS.tics41.,Times where I have nothing meaningful to do ,TICS,stress,stress,stress
+TICS.tics42.,Times where I am short of contacts to others ,TICS,stress,stress,stress
+TICS.tics43.,I have to manage tasks that are connected to others’ high expectations on me ,TICS,stress,stress,stress
+TICS.tics44.,Times where I am overwhelmed by my work ,TICS,stress,stress,stress
+TICS.tics45.,I get into arguments with others which lead to ongoing conflicts ,TICS,stress,stress,stress
+TICS.tics46.,My commitment is not rewarded adequately ,TICS,stress,stress,stress
+TICS.tics47.,Fear of being unable to manage my tasks ,TICS,stress,stress,stress
+TICS.tics48.,I have to do work that hardly allows for my abilities (capabilities) ,TICS,stress,stress,stress
+TICS.tics49.,Situations where others’ well-being depends on the reliability of my job performance ,TICS,stress,stress,stress
+TICS.tics50.,I have too many tasks to deal with ,TICS,stress,stress,stress
+TICS.tics51.,Times where I miss having contact with others ,TICS,stress,stress,stress
+TICS.tics52.,I have unnecessary arguments with others ,TICS,stress,stress,stress
+TICS.tics53.,Times where I miss enjoyable tasks ,TICS,stress,stress,stress
+TICS.tics54.,Experiencing that I have too much to do ,TICS,stress,stress,stress
+TICS.tics55.,I cannot manage my tasks as I ought to be able to although I try.,TICS,stress,stress,stress
+TICS.tics56.,Times where I miss having friends to spend time with ,TICS,stress,stress,stress
+TICS.tics57.,Times where my responsibility for others becomes a burden,TICS,stress,stress,stress
+CAPE01[SQ001][1],Do you ever feel sad?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ001][2],Do you ever feel sad?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ002][1],Do you ever feel as if people seem to drop hints about you or say things with a double meaning?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ002][2],Do you ever feel as if people seem to drop hints about you or say things with a double meaning?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ003][1],Do you ever feel that you are not a very animated person?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ003][2],Do you ever feel that you are not a very animated person?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ004][1],Do you ever feel that you are not much of a talker when you are conversing with other people?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ004][2],Do you ever feel that you are not much of a talker when you are conversing with other people?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ005][1],Do you ever feel as if things in magazines or on TV were written especially for you?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ005][2],Do you ever feel as if things in magazines or on TV were written especially for you?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ006][1],Do you ever feel as if some people are not what they seem to be?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ006][2],Do you ever feel as if some people are not what they seem to be?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ007][1],Do you ever feel as if you are being persecuted in some way?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ007][2],Do you ever feel as if you are being persecuted in some way?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ008][1],Do you ever feel that you experience few or no emotions at important events?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ008][2],Do you ever feel that you experience few or no emotions at important events?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ009][1],Do you ever feel pessimistic about everything?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ009][2],Do you ever feel pessimistic about everything?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ010][1],Do you ever feel as if there is a conspiracy against you?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ010][2],Do you ever feel as if there is a conspiracy against you?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ011][1],Do you ever feel as if you are destined to be someone very important?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ011][2],Do you ever feel as if you are destined to be someone very important?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ012][1],Do you ever feel as if there is no future for you?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ012][2],Do you ever feel as if there is no future for you?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ013][1],Do you ever feel that you are a very special or unusual person?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ013][2],Do you ever feel that you are a very special or unusual person?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ014][1],Do you ever feel as if you do not want to live anymore?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ014][2],Do you ever feel as if you do not want to live anymore?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ015][1],Do you ever think that people can communicate telepathically?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ015][2],Do you ever think that people can communicate telepathically?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ016][1],Do you ever feel that you have no interest to be with other people?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ016][2],Do you ever feel that you have no interest to be with other people?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ017][1],Do you ever feel as if electrical devices such as computers can influence the way you think?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ017][2],Do you ever feel as if electrical devices such as computers can influence the way you think?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ018][1],Do you ever feel that you are lacking in motivation to do things?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ018][2],Do you ever feel that you are lacking in motivation to do things?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ019][1],Do you ever cry about nothing?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ019][2],Do you ever cry about nothing?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ020][1],"Do you believe in the power of witchcraft, voodoo or the occult?[Scale 1]",CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ020][2],"Do you believe in the power of witchcraft, voodoo or the occult?[Scale 2]",CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ021][1],Do you ever feel that you are lacking in energy?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ021][2],Do you ever feel that you are lacking in energy?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ022][1],Do you ever feel that people look at you oddly because of your appearance?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ022][2],Do you ever feel that people look at you oddly because of your appearance?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ023][1],Do you ever feel that your mind is empty?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ023][2],Do you ever feel that your mind is empty?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ024][1],Do you ever feel as if the thoughts in your head are being taken away from you?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ024][2],Do you ever feel as if the thoughts in your head are being taken away from you?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ025][1],Do you ever feel that you are spending all your days doing nothing?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ025][2],Do you ever feel that you are spending all your days doing nothing?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ026][1],Do you ever feel as if the thoughts in your head are not your own?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ026][2],Do you ever feel as if the thoughts in your head are not your own?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ027][1],Do you ever feel that your feelings are lacking in intensity?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ027][2],Do you ever feel that your feelings are lacking in intensity?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ028][1],Have your thoughts ever been so vivid that you were worried other people would hear them?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ028][2],Have your thoughts ever been so vivid that you were worried other people would hear them?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ029][1],Do you ever feel that you are lacking in spontaneity?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ029][2],Do you ever feel that you are lacking in spontaneity?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ030][1],Do you ever hear your own thoughts being echoed back to you?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ030][2],Do you ever hear your own thoughts being echoed back to you?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ031][1],Do you ever feel as if you are under the control of some force or power other than yourself?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ031][2],Do you ever feel as if you are under the control of some force or power other than yourself?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ032][1],Do you ever feel that your emotions are blunted?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ032][2],Do you ever feel that your emotions are blunted?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ033][1],Do you ever hear voices when you are alone?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ033][2],Do you ever hear voices when you are alone?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ034][1],Do you ever hear voices talking to each other when you are alone?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ034][2],Do you ever hear voices talking to each other when you are alone?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ035][1],Do you ever feel that you are neglecting your appearance or personal hygiene?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ035][2],Do you ever feel that you are neglecting your appearance or personal hygiene?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ036][1],Do you ever feel that you can never get things done?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ036][2],Do you ever feel that you can never get things done?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ037][1],Do you ever feel that you have only few hobbies or interests?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ037][2],Do you ever feel that you have only few hobbies or interests?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ038][1],Do you ever feel guilty?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ038][2],Do you ever feel guilty?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ039][1],Do you ever feel like a failure?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ039][2],Do you ever feel like a failure?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ040][1],Do you ever feel tense?[Scale 1],CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ040][2],Do you ever feel tense?[Scale 2],CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ041][1],"Do you ever feel as if a double has taken the place of a family member, friend or acquaintance?[Scale 1]",CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ041][2],"Do you ever feel as if a double has taken the place of a family member, friend or acquaintance?[Scale 2]",CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ042][1],"Do you ever see objects, people or animals that other people cannot see?[Scale 1]",CAPE01,psychoticexperience,psychoticexperience,psychoticexperience
+CAPE01[SQ042][2],"Do you ever see objects, people or animals that other people cannot see?[Scale 2]",CAPE02,psychoticexperience,psychoticexperience,psychoticexperience
+CTQ.ctq1.,I did not have enough to eat.,CTQ,trauma,trauma,trauma
+CTQ.ctq2],I had someone to take care of me and protect me.,CTQ,trauma,trauma,trauma
+CTQ.ctq3.,"I have been called ""stupid"", ""lazy"", and/or ""ugly"".",CTQ,trauma,trauma,trauma
+CTQ.ctq4.,My partents were too drunk/high to take care of me. ,CTQ,trauma,trauma,trauma
+CTQ.ctq5.,Someone helped me feel important.,CTQ,trauma,trauma,trauma
+CTQ.ctq6.,I had to wear dirty clothes.,CTQ,trauma,trauma,trauma
+CTQ.ctq7.,I felt loved.,CTQ,trauma,trauma,trauma
+CTQ.ctq8.,I felt/thought that my parents wished I had never been born.,CTQ,trauma,trauma,trauma
+CTQ.ctq9.,I got hit so hard that I had to see a doctor.,CTQ,trauma,trauma,trauma
+CTQ.ctq10.,There is nothing I want to change in my family.,CTQ,trauma,trauma,trauma
+CTQ.ctq11.,I've been hit so hard that it left bruises and marks.,CTQ,trauma,trauma,trauma
+CTQ.ctq12.,"I was punished with a belt, board, cord, or another hard object. ",CTQ,trauma,trauma,trauma
+CTQ.ctq13.,My family looked out for each other. ,CTQ,trauma,trauma,trauma
+CTQ.ctq14.,My family said hurtful or instulting things to me.,CTQ,trauma,trauma,trauma
+CTQ.ctq15.,I was physically abused. ,CTQ,trauma,trauma,trauma
+CTQ.ctq16.,I had a perfect childhood. ,CTQ,trauma,trauma,trauma
+CTQ.ctq17.,"I got hit badly and it was noticed by a teacher, neighbor, and/or doctor. ",CTQ,trauma,trauma,trauma
+CTQ.ctq18.,Someone in my family hated me.,CTQ,trauma,trauma,trauma
+CTQ.ctq19.,My family felt close to each other. ,CTQ,trauma,trauma,trauma
+CTQ.ctq20.,Someone tried to touch me in a sexual way or tried to make me touch them.,CTQ,trauma,trauma,trauma
+CTQ.ctq21.,Someone threatened to hurt me unless I did something sexual with them. ,CTQ,trauma,trauma,trauma
+CTQ.ctq22.,I have the best family in the world.,CTQ,trauma,trauma,trauma
+CTQ.ctq23.,Someone made me try to do sexual things/watch sexual things.,CTQ,trauma,trauma,trauma
+CTQ.ctq24.,Someone molested me. ,CTQ,trauma,trauma,trauma
+CTQ.ctq25.,I was emotionally abused.,CTQ,trauma,trauma,trauma
+CTQ.ctq26.,Someone took me to see the doctor when I needed to/ if I needed to.,CTQ,trauma,trauma,trauma
+CTQ.ctq27.,I was sexually abused. ,CTQ,trauma,trauma,trauma
+CTQ.ctq28.,My family gave me strength and support. ,CTQ,trauma,trauma,trauma
+PSWQ.PSWQ1.,"If I do not have enough time to do everything, I do not worry about it.",PSWQ,worry,worry,worry
+PSWQ.PSWQ2.,My worries overwhelm me. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ3.,I do not tend to worry about things.,PSWQ,worry,worry,worry
+PSWQ.PSWQ4.,Many situations make me worry. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ5.,"I know I should not worry about things, but I just cannot help it.",PSWQ,worry,worry,worry
+PSWQ.PSWQ6.,When I am under pressure I worry a lot. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ7.,I am always worrying about something. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ8.,I find it easy to dismiss worrisome thoughts. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ9.,"As soon as I finish one task, I start to worry about everything else I have to do.",PSWQ,worry,worry,worry
+PSWQ.PSWQ10.,I never worry about anything. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ11.,"When there is nothing more I can do about a concern, I do not worry about it any more.",PSWQ,worry,worry,worry
+PSWQ.PSWQ12.,I have been a worrier all my life. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ13.,I notice that I have been worrying about things.,PSWQ,worry,worry,worry
+PSWQ.PSWQ14.,"Once I start worrying, I cannot stop. ",PSWQ,worry,worry,worry
+PSWQ.PSWQ15.,I worry all the time. ,PSWQ,worry,worry,worry
+PSWQ.PSWQ16.,I worry about projects until they are all done. ,PSWQ,worry,worry,worry
