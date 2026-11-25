@@ -415,6 +415,49 @@ cor_result <- cor.test(dfp$lost, dfp$moves, method = "pearson")
 cor_result
 ```
 
+# Reaction to feedback: mixed model 
+```{r}
+dfrun <- df %>%
+  filter(state == "navigating") %>%
+  distinct(ID, run, trial, nMoves, dogsLost) %>%
+  group_by(ID, run) %>%
+  summarise(moves = mean(nMoves, na.rm = TRUE),
+            lost = first(dogsLost), .groups = "drop")
+
+# change in moves from the previous run (t - (t-1)) and dogs lost in the previous run (t-1)
+dfrun <- dfrun %>%
+  arrange(ID, run) %>%
+  group_by(ID) %>%
+  mutate(delta_moves = moves - lag(moves),
+         lost_prev = lag(lost)) %>%
+  ungroup() %>%
+  filter(!is.na(delta_moves), !is.na(lost_prev))
+
+m.simple <- lmer(moves ~ lost_prev + run + (1 | ID), data = dfrun)
+car::Anova(m.simple)
+summary(m.simple)
+```
+
+
+```{r}
+# alternative outcome: mean distance to the storm
+dfdist <- df %>%
+  filter(state == "navigating") %>%
+  mutate(dist_storm = sqrt((move_row - csX)^2 + (move_col - csY)^2)) %>%
+  group_by(ID, run) %>%
+  summarise(mean_dist = mean(dist_storm, na.rm = TRUE),
+            lost = first(dogsLost), .groups = "drop") %>%
+  arrange(ID, run) %>%
+  group_by(ID) %>%
+  mutate(lost_prev = lag(lost)) %>%  # dogs lost in the previous run
+  ungroup() %>%
+  filter(!is.na(lost_prev))
+
+m.simple.dist <- lmer(mean_dist ~ lost_prev + run + (1 | ID), data = dfdist)
+car::Anova(m.simple.dist)
+summary(m.simple.dist)
+```
+
 ## Slider slightly more focus on sinking 
 ```{r}
 dfQuestions <- df %>%
@@ -525,6 +568,61 @@ ggplot()+geom_point(data = pre_checks, aes(x = distanceRound, y = avg_rat, group
 #ggsave(paste0(data_path, "/output/Plots/ratings_pre.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
 ```
 
+# Ratings PRE across runs
+```{r}
+# one row per participant x run: mean PRE rating (rated tiles have the same distances from the storm in every run)
+dfrate_runs <- df %>%
+  filter(state == "ratingPRE") %>%
+  group_by(ID, run, F1iip, F2iip, F3iip) %>%  # factor scores are constant per participant, kept for the factor model below
+  summarise(mean_rating = mean(rating, na.rm = TRUE), .groups = "drop")
+
+# plot: mean +/- SE across participants per run (same style as path length and distance across runs)
+ggplot(dfrate_runs, aes(x = run, y = mean_rating)) +stat_summary(fun.data = mean_se, geom = "ribbon", fill = "#E6A3EE", alpha = 0.5) +stat_summary(fun = mean, geom = "line", color = "#91316D") +stat_summary(fun = mean, geom = "point", size = 2, color = "#91316D") +expand_limits(y = 0)+coord_cartesian(ylim = c(0, 70)) +scale_y_continuous(breaks = seq(0, 70, 10)) +scale_x_continuous(breaks = 0:8) +labs(x = "Run", y = "Ratings (pre), mean (± SE)") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+# change over runs: random intercept and random slope for run per participant
+m.rate.run <- lmer(mean_rating ~ run + (1 + run | ID), data = dfrate_runs)
+car::Anova(m.rate.run)
+summary(m.rate.run)
+
+#check for factor effects
+m.rate.run.fac <- lmer(mean_rating ~ run * (F1iip + F2iip + F3iip) + (1 + run | ID), data = dfrate_runs)
+car::Anova(m.rate.run.fac)
+summary(m.rate.run.fac)
+```
+
+
+# Ratings PRE and feedback from the previous run
+```{r}
+# Do participants rate threat higher after losing more dogs in the previous run?
+
+lost_runs <- df %>%
+  filter(state == "navigating") %>%
+  distinct(ID, run, dogsLost) %>%
+  arrange(ID, run) %>%
+  group_by(ID) %>%
+  mutate(lost_prev = lag(dogsLost)) %>%  # dogs lost in the previous run
+  ungroup() %>%
+  select(ID, run, lost_prev)
+
+# run 0 has no previous feedback and is dropped
+dfrate_fb <- dfrate_runs %>%
+  left_join(lost_runs, by = c("ID", "run")) %>%
+  filter(!is.na(lost_prev))
+
+m.rate.fb <- lmer(mean_rating ~ lost_prev + run + (1 | ID), data = dfrate_fb)
+car::Anova(m.rate.fb)
+summary(m.rate.fb)
+```
+
+# Ratings PRE and feedback: do the factors change the reaction to feedback?
+```{r}
+# same model as m.rate.fb in the chunk above, with the factors added
+# lost_prev x factor: does the association with feedback differ with the factor scores?
+m.rate.fb.fac <- lmer(mean_rating ~ lost_prev * (F1iip + F2iip + F3iip) + run + (1 | ID), data = dfrate_fb)
+car::Anova(m.rate.fb.fac)
+summary(m.rate.fb.fac)
+```
+
 
 
 #Worry/IOU Factor associated with higher ratings. 
@@ -550,6 +648,8 @@ dfsum_long <- dfsum %>%
 ggplot(dfsum_long, aes(x = score, y = avg_rating, color = state)) + geom_point(alpha = 0.7) + geom_smooth(method = "lm", se = TRUE) + stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top") + facet_wrap(~factor, scales = "free_x") + labs(title = "Factors & Ratings PRE", x = "Factor Score", y = "Average Rating") + theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)+facet_grid(state~factor)+ scale_color_manual(values = c("#090049","#91316D"))
 ```
 
+
+
 ```{r}
 corr_results <- dfsum_long %>%
   group_by(state, factor) %>%
@@ -565,6 +665,15 @@ corr_results <- dfsum_long %>%
 
 corr_results
 ```
+
+```{r}
+m.fac.simple <- lmer(data=df[df$state == "ratingPRE",], rating ~ F1iip + F2iip + F3iip + distance + run + (1|ID))
+car::Anova(m.fac.simple)
+summary(m.fac.simple)
+effectsize::eta_squared(m.fac.simple, alternative = "two.sided")
+
+```
+
 
 
 #Worry/IOU Factor associated with AUC
@@ -594,23 +703,6 @@ auc_long <- auc_results2 %>%
   )
 
 ggplot(auc_long, aes(x = score, y = mean_auc, color = state)) +geom_point(alpha = 0.7) +geom_smooth(method = "lm", se = TRUE) +facet_wrap(~factor, scales = "free_x") +labs(x = "Factor Score",y = "Mean AUC",title = "Correlation of Factors with AUC") +theme_minimal() +theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),method = "pearson", label.x.npc = "left", label.y.npc = "top")+facet_grid(state~factor)+ scale_color_manual(values = c("#090049","#91316D"))
-```
-
-
-```{r}
-corr_results <- auc_long %>%
-  group_by(state, factor) %>%
-  summarise(
-    cor_test = list(cor.test(score, mean_auc, use = "complete.obs", method = "pearson")),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    tidy_res = map(cor_test, broom::tidy)
-  ) %>%
-  unnest(tidy_res) %>%
-  select(state, factor, estimate, p.value, conf.low, conf.high)
-
-corr_results
 ```
 
 
@@ -671,6 +763,7 @@ df <- df %>%
 m.fac <- lmer(data=df[df$state == "ratingPRE",], rating ~ F1iip*distance + F2iip*distance + F3iip*distance+ run + (1|ID))
 car::Anova(m.fac)
 car::vif(m.fac)
+
 summary(m.fac)
 effectsize::eta_squared(m.fac, alternative = "two.sided")
 
@@ -929,6 +1022,73 @@ cor.test(dst$avg_distance, dst$avg_pathlength)
 ggplot(dst, aes(x = avg_distance, y = avg_pathlength)) +geom_point() + geom_smooth(method = "lm", se = TRUE, color = '#FFC857') +  labs(x = "Average euc distance", y = "Average pathlength") +theme_minimal() +theme(aspect.ratio = 1)+ggtitle("Euc distance to CS+ vs nMoves")
 ```
 
+### 3) Path length and distance across runs
+```{r}
+dfruns <- navi %>%
+  group_by(ID, run) %>%
+  summarise(mean_dist = mean(move_distance_from_cs, na.rm = TRUE), .groups = "drop") %>%
+  left_join(navi %>%
+              distinct(ID, run, trial, nMoves) %>%
+              group_by(ID, run) %>%
+              summarise(moves = mean(nMoves, na.rm = TRUE), .groups = "drop"),
+            by = c("ID", "run"))
+
+# plot: mean +/- SE across participants per run
+dfruns_long <- dfruns %>%
+  pivot_longer(cols = c(moves, mean_dist), names_to = "measure", values_to = "value") %>%
+  mutate(measure = recode(measure, moves = "Path length (moves)", mean_dist = "Distance from storm"))
+
+
+ggplot(dfruns_long, aes(x = run, y = value)) +stat_summary(fun.data = mean_se, geom = "ribbon", fill = "#E6A3EE", alpha = 0.5) +stat_summary(fun = mean, geom = "line", color = "#91316D") +stat_summary(fun = mean, geom = "point", size = 2, color = "#91316D") +geom_blank(data = data.frame(measure = c("Distance from storm", "Path length (moves)"), value = c(7, 15), run = 0)) +facet_wrap(~ measure, scales = "free_y") +expand_limits(y = 0) +scale_x_continuous(breaks = 0:8) +labs(x = "Run", y = "Mean (± SE)") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14),strip.text = element_text(size = 14))
+
+
+# change over runs: random intercept and random slope for run per participant
+m.moves.run <- lmer(moves ~ run + (1 + run | ID), data = dfruns)
+car::Anova(m.moves.run)
+summary(m.moves.run)
+
+m.dist.run <- lmer(mean_dist ~ run + (1 + run | ID), data = dfruns)
+car::Anova(m.dist.run)
+summary(m.dist.run)
+
+#check for factor effects (as for ratings across runs)
+dfruns_fac <- dfruns %>%
+  left_join(df %>% distinct(ID, F1iip, F2iip, F3iip), by = "ID")  # factor scores, one per participant
+
+m.moves.run.fac <- lmer(moves ~ run * (F1iip + F2iip + F3iip) + (1 + run | ID), data = dfruns_fac)
+car::Anova(m.moves.run.fac)
+summary(m.moves.run.fac)
+
+m.dist.run.fac <- lmer(mean_dist ~ run * (F1iip + F2iip + F3iip) + (1 + run | ID), data = dfruns_fac)
+car::Anova(m.dist.run.fac)
+summary(m.dist.run.fac)
+```
+
+### 4) Change in ratings and change in behaviour across runs
+```{r}
+# Did participants who changed their threat ratings more over runs also change their behaviour more?
+# per participant: slope over runs (simple linear regression per person) of
+#   mean PRE rating (dfrate_runs, ratings section), path length and distance from storm (dfruns, chunk above)
+slopes <- dfruns %>%
+  left_join(dfrate_runs, by = c("ID", "run")) %>%
+  group_by(ID) %>%
+  summarise(slope_rating = coef(lm(mean_rating ~ run))[2],
+            slope_moves  = coef(lm(moves ~ run))[2],
+            slope_dist   = coef(lm(mean_dist ~ run))[2],
+            .groups = "drop")
+
+# Pearson correlations
+cor.test(slopes$slope_rating, slopes$slope_moves, method = "pearson")
+cor.test(slopes$slope_rating, slopes$slope_dist, method = "pearson")
+
+# one point per participant
+slopes_long <- slopes %>%
+  pivot_longer(cols = c(slope_moves, slope_dist), names_to = "measure", values_to = "slope_behaviour") %>%
+  mutate(measure = recode(measure, slope_moves = "Path length (moves)", slope_dist = "Distance from storm"))
+
+ggplot(slopes_long, aes(x = slope_rating, y = slope_behaviour)) +geom_point(color = '#E6A3EE', alpha = 0.7) +geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ measure, scales = "free_y") +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(x = "Change in ratings (pre) per run", y = "Change in behaviour per run") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14),strip.text = element_text(size = 14))
+```
+
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ### H1: Does generalisation impact avoidance
@@ -947,9 +1107,23 @@ navi_counts <- df %>%
 
 joint_df <- left_join(rate_df, navi_counts, by = "ID")
 
-ggplot(joint_df, aes(x = mean_rate, y = nMoves)) +geom_point() + geom_smooth(method = "lm", se = TRUE, color = "#91316D") +labs(x = "Ratings (pre)", y = "Path length") +theme_minimal() +theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "center", label.y.npc = "top") +theme(aspect.ratio = 1)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+ggplot(joint_df, aes(x = mean_rate, y = nMoves)) +geom_point(alpha = 0.7, size = 2, fill = "black") + geom_smooth(method = "lm", se = TRUE, color = "#91316D") +labs(x = "Ratings (pre)", y = "Path length") +theme_minimal() +theme(aspect.ratio = 1)+stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "center", label.y.npc = "top") +theme(aspect.ratio = 1)+theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
 
 cor.test(joint_df$nMoves, joint_df$mean_rate)
+ggsave(paste0(data_path, "/output/Plots/ratingsmoves.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
+
+#Ratings (pre) with number of moves and distance from the storm in one plot (z-scored)
+```{r}
+# z-score both measures (within each measure) so they share one scale; uses rate_behav from the chunk above
+rate_behav_z <- rate_behav %>%
+  group_by(measure) %>%
+  mutate(value_z = as.numeric(scale(value))) %>%
+  ungroup()
+
+# both clouds in one plot (pink: number of moves, blue: distance), each with its own linear fit
+ggplot(rate_behav_z, aes(x = mean_rate, y = value_z, color = measure, fill = measure)) +geom_point(alpha = 0.4, size = 2) +geom_smooth(method = "lm", se = TRUE) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top", show.legend = FALSE) +scale_color_manual(values = c("Number of moves" = "darkgrey", "Distance from storm" = "#91316D")) +scale_fill_manual(values = c("Number of moves" = "darkgrey", "Distance from storm" = "#91316D")) +labs(x = "Ratings (pre)", y = "Standardised value (z)", color = "", fill = "") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14),legend.text = element_text(size = 12))
 ```
 
 
@@ -1429,6 +1603,22 @@ ggplot(curve_data, aes(x = ratingPRE, y = pred, group = ID)) +geom_line(alpha = 
 #ggsave(paste0(data_path, "/output/Plots/log_functions.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
 ```
 
+#visualise fitted functions with average
+```{r}
+curve_avg <- curve_data %>%
+  group_by(ratingPRE) %>%
+  summarise(mean_pred = mean(pred, na.rm = TRUE),
+            se = sd(pred, na.rm = TRUE) / sqrt(sum(!is.na(pred))),
+            .groups = "drop")
+
+ggplot(curve_data, aes(x = ratingPRE, y = pred)) +
+  geom_line(aes(group = ID), alpha = 0.1, color = "grey60") +
+  geom_ribbon(data = curve_avg, aes(x = ratingPRE, ymin = mean_pred - se, ymax = mean_pred + se), inherit.aes = FALSE, fill = "#91316D", alpha = 0.4) +
+  geom_line(data = curve_avg, aes(x = ratingPRE, y = mean_pred), color = "#91316D", linewidth = 1.5) +labs(x = "Rating", y = "Predicted Probability of Visiting") +theme_classic() +theme(aspect.ratio = 1,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(size = 14),axis.text.y = element_text(size = 14))
+
+#ggsave(paste0(data_path, "/output/Plots/log_functions_avg.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+```
+
 ```{r}
 log_res_clean <- log_res %>%
   filter(!is.na(slope)) %>%
@@ -1713,13 +1903,27 @@ dfp <- dflst %>%
   summarise(mean_ls = mean(ls_subject_transformed),
             mean_peak = mean(peak_subject_transformed))
 
-#plot fitted params x model 
+#plot fitted params (euc_rbf_peak, PRE ratings): one point per participant, ls and peak as subplots
+dfp_params <- dfp %>%
+  filter(model == "euc_rbf_peak", ratings == "ratingPRE", ID %in% unique(df$ID)) %>%  # only participants kept in the task data (236)
+  pivot_longer(cols = c(mean_ls, mean_peak), names_to = "parameter", values_to = "value") %>%
+  mutate(parameter = recode(parameter, mean_ls = "ls", mean_peak = "peak"))
 
-#ls
-ggplot(data = dfp[dfp$model == "euc_rbf_peak" | dfp$model == "euc_lin_peak",], aes(x=model, y=mean_ls))+geom_boxplot(fill = "#ff00ff58")+theme_minimal() + theme(aspect.ratio = 1)+facet_grid(.~ratings)+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ggtitle("Fitted ls")
+# separate plots for ls and peak, same visuals as the weight and pessimism plots
+ggplot(dfp_params %>% filter(parameter == "ls"), aes(x = "", y = value)) +geom_boxplot(fill = "grey", alpha = 0.6, outlier.shape = NA) +geom_jitter(width = 0.1, alpha = 0.6, size = 2, color="#090049") +theme_classic() +theme(aspect.ratio = 2,axis.title.x = element_blank(),axis.title.y = element_text(size = 16),axis.text = element_text(size = 14)) +ylab("Estimated length scale") +expand_limits(y = 0)
 
-#mean
-ggplot(data = dfp[dfp$model == "euc_rbf_peak" | dfp$model == "euc_lin_peak",], aes(x=model, y=mean_peak))+geom_boxplot(fill = "#ff00ff58")+theme_minimal() + theme(aspect.ratio = 1)+facet_grid(.~ratings)+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ggtitle("Fitted peak")
+#ggsave(paste0(data_path, "/output/Plots/parametersbeliefsls.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+ggplot(dfp_params %>% filter(parameter == "peak"), aes(x = "", y = value)) +geom_boxplot(fill = "grey", alpha = 0.6, outlier.shape = NA) +geom_jitter(width = 0.1, alpha = 0.6, size = 2, color="#090049") +theme_classic() +theme(aspect.ratio = 2,axis.title.x = element_blank(),axis.title.y = element_text(size = 16),axis.text = element_text(size = 14)) +ylab("Estimated peak") +ylim(0, 100)
+
+#ggsave(paste0(data_path, "/output/Plots/parametersbeliefspeak.pdf"),width = 4,height = 4,dpi = 600,bg = "white")
+
+# mean and sd across participants per parameter
+dfp_params %>%
+  group_by(parameter) %>%
+  summarise(mean = mean(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE),
+            n = sum(!is.na(value)))
 ```
 #ls checks: association with max, mean ratings
 ```{r}
@@ -1768,6 +1972,36 @@ mean(sdf$mean_ls)
 sd(sdf$mean_ls)
 ```
 
+#ls & individual distance slopes
+```{r}
+# participant's slope of ratings over distance x mean ls across runs.
+m.dist.id <- lmer(data = df[df$state == "ratingPRE",], rating ~ distance + run + (distance | ID))
+summary(m.dist.id)
+
+
+# participant-specific slope = fixed slope + random slope
+id_slopes <- coef(m.dist.id)$ID %>%
+  rownames_to_column("ID") %>%
+  select(ID, dist_slope = distance)
+
+# mean ls per participant across all runs
+id_ls <- dfchecks %>%
+  ungroup() %>%
+  filter(state == "ratingPRE", model == "euc_rbf_peak") %>%
+  group_by(ID) %>%
+  summarise(mean_ls = mean(mean_ls, na.rm = TRUE), .groups = "drop") %>%
+  mutate(ID = as.character(ID))  # coef() row names are character
+
+df_slope_ls <- id_ls %>% inner_join(id_slopes, by = "ID")
+nrow(df_slope_ls)
+
+cor.test(df_slope_ls$dist_slope, df_slope_ls$mean_ls)
+
+ggplot(df_slope_ls, aes(x = dist_slope, y = mean_ls)) +geom_point(color = '#E6A3EE') +geom_smooth(method = "lm", se = TRUE, color = "black") +theme_minimal() + theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(x = "Individual distance slope (ratings)", y = "Mean ls", title = "LS & individual distance slopes")
+```
+
+
+
 #ls & mh variations (overall correlations)
 ```{r}
 dfp <- dfchecks[dfchecks$state == "ratingPRE" & dfchecks$model == "euc_rbf_peak",] %>%
@@ -1792,6 +2026,90 @@ dfp_F <- long_df %>% filter(questionnaire %in% F_vars)
 ggplot(dfp_F, aes(x = score, y = mean_ls)) +geom_point(color = '#E6A3EE') +geom_smooth(method = "lm", se = TRUE, color = "black") +facet_wrap(~ questionnaire, scales = "free_x", ncol = 4) +theme_minimal() + theme(aspect.ratio = 1) +stat_cor(aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")), method = "pearson", label.x.npc = "left", label.y.npc = "top") +labs(title = "LS & Factor scores")
 ```
 
+#ls & factor scores 
+```{r}
+
+dflsfac <- dfchecks %>%
+  ungroup() %>%
+  filter(state == "ratingPRE", model == "euc_rbf_peak")
+
+m.ls.run <- lmer(mean_ls ~ F1iip + F2iip + F3iip + run + (1|ID), data = dflsfac)
+car::Anova(m.ls.run)
+summary(m.ls.run)
+effectsize::eta_squared(m.ls.run, alternative = "two.sided")
+```
+
+
+#ls & factor scores across runs (regression)
+```{r}
+# one ls per participant x run; tests whether the association between ls and the factor scores changes over runs
+# (factor x run interactions) instead of splitting the runs into halves
+dfls_run <- dfchecks %>%
+  ungroup() %>%
+  filter(state == "ratingPRE", model == "euc_rbf_peak")
+
+m.ls.run <- lmer(mean_ls ~ (F1iip + F2iip + F3iip) * run + (1|ID), data = dfls_run)
+car::Anova(m.ls.run)
+summary(m.ls.run)
+
+# association of each factor with ls at each run, as implied by the model
+slopes_ls_F1 <- modelbased::estimate_slopes(m.ls.run, trend = "F1iip", at = "run")
+slopes_ls_F2 <- modelbased::estimate_slopes(m.ls.run, trend = "F2iip", at = "run")
+slopes_ls_F3 <- modelbased::estimate_slopes(m.ls.run, trend = "F3iip", at = "run")
+slopes_ls_F1
+slopes_ls_F2
+slopes_ls_F3
+```
+
+
+#ls change over runs
+```{r}
+# one ls per participant x run (ratingPRE, euc_rbf_peak)
+dfls_runs <- dfchecks[dfchecks$mean_ls <20,] %>%
+  ungroup() %>%
+  filter(state == "ratingPRE", model == "euc_rbf_peak")
+
+# individual ls per run (points) with mean +/- SE across participants
+ggplot(dfls_runs, aes(x = run, y = mean_ls)) +geom_jitter(width = 0.15, alpha = 0.3, color = '#E6A3EE') +stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +stat_summary(fun = mean, geom = "line") +stat_summary(fun = mean, geom = "point", size = 2) +scale_x_continuous(breaks = 0:8) +theme_minimal() + theme(aspect.ratio = 1) +labs(x = "Run", y = "ls", title = "LS across runs")
+
+# linear change of ls over runs, participants as random intercepts
+m.ls.time <- lmer(mean_ls ~ run + (1|ID), data = dfls_runs)
+car::Anova(m.ls.time)
+summary(m.ls.time)
+
+#ls overall seems to decrease over task
+```
+
+#ls change over runs per participant
+```{r}
+# one line per participant (thin) + group mean (thick)
+ggplot(dfls_runs, aes(x = run, y = mean_ls)) +geom_line(aes(group = ID), alpha = 0.15, color = '#E6A3EE') +stat_summary(fun = mean, geom = "line", linewidth = 1.2) +stat_summary(fun = mean, geom = "point", size = 2) +scale_x_continuous(breaks = 0:8) +theme_minimal() + theme(aspect.ratio = 1) +labs(x = "Run", y = "ls", title = "LS across runs per participant")
+
+# fixed effect of run = average change of ls per run
+# random slope of run = how much participants differ in that change (see SD of run under Random effects)
+m.ls.slope <- lmer(mean_ls ~ run + (run | ID), data = dfls_runs)
+summary(m.ls.slope)
+
+# each participant's own change per run: how many go down vs up
+ls_change <- coef(m.ls.slope)$ID$run
+ggplot(data.frame(ls_change), aes(x = ls_change)) +geom_histogram(bins = 30, fill = '#E6A3EE') +geom_vline(xintercept = 0, linetype = "dashed") +theme_minimal() + theme(aspect.ratio = 1) +labs(x = "ls change per run", y = "Participants", title = "Individual ls change over runs")
+mean(ls_change < 0)  # proportion of participants whose ls decreases
+```
+
+#Peak vs true CS value
+```{r}
+# does the fitted peak differ from true CS value? 
+true_value <- 70
+peak_vals <- dfp_params$value[dfp_params$parameter == "peak"]
+
+# one-sample t-test against the true value (mean), with Cohen's d
+t.test(peak_vals, mu = true_value)
+(mean(peak_vals) - true_value) / sd(peak_vals)
+
+# robustness check without normality assumption: Wilcoxon signed-rank test (pseudo-median)
+wilcox.test(peak_vals, mu = true_value, conf.int = TRUE)
+```
+
 
 
 #Correlation PEAK & mean/max rating
@@ -1813,15 +2131,12 @@ sdf <- dfp[dfp$model == "euc_rbf_peak",]
 sdf <- sdf[sdf$state == "ratingPRE",] %>%
   group_by(ID) %>%
   summarise( mean_peak = mean(mean_peak, na.rm = TRUE),
-            max_rating = max(max_rating))
+            max_rating = max(max_rating),
+            mean_rating = mean(mean_rating))
 
 cor.test(sdf$max_rating, sdf$mean_peak)
+cor.test(sdf$mean_rating, sdf$mean_peak)
 
-mean(sdf$mean_peak)
-sd(sdf$mean_peak)
-
-t.test(sdf$mean_peak, mu = 70)
-cohens_d(sdf$mean_peak, mu = 70)
 ```
 
 
@@ -1857,6 +2172,17 @@ dfps <- dfp%>%
 cor.test(dfps$mean_peak, dfps$F1iip)
 cor.test(dfps$mean_peak, dfps$F2iip)
 cor.test(dfps$mean_peak, dfps$F3iip)
+
+
+dfps_run <- dfchecks %>%
+  ungroup() %>%
+  filter(state == "ratingPRE", model == "euc_rbf_peak")
+
+m.peak.run <- lmer(mean_peak ~ F1iip + F2iip + F3iip + run + (1 | ID), data = dfps_run)
+car::Anova(m.peak.run)
+summary(m.peak.run)
+effectsize::eta_squared(m.peak.run, alternative = "two.sided")
+
 ```
 
 
@@ -1983,6 +2309,61 @@ summed_df$best_fit <- apply(summed_df[, bic_cols], 1, function(x) bic_cols[which
 table(summed_df$best_fit)
 ```
 
+#BIC with penalty for the GP parameters (generalised beliefs model)
+```{r}
+# conservative check, we count them as 2 extra parameters per run.
+# where BIC = (number of parameters × ln(number of data points)) − 2 × fit
+
+# get number of moves per trial (n) from BIC
+#    BIC - AIC = k*log(n) - 2k  ->  log(n) = (BIC - AIC)/2 + 2
+dfmdp$n_moves <- round(exp((dfmdp$bic_w - dfmdp$aic_w) / 2 + 2))
+table(dfmdp$n_moves)  # check: should be whole numbers of moves
+
+# penalty once per run as GP fitted once
+pen_run <- dfmdp %>%
+  group_by(participant, run) %>%
+  summarise(n_run = sum(n_moves, na.rm = TRUE), .groups = "drop") %>%
+  mutate(penalty = 2 * log(n_run)) #this comes from penalty in BIC term 
+
+# add penalty to the summed BIC of the generalised beliefs model
+pen_ppt <- pen_run %>%
+  group_by(participant) %>%
+  summarise(penalty = sum(penalty), .groups = "drop")
+
+summed_pen <- summed_df %>%
+  left_join(pen_ppt, by = "participant") %>%
+  mutate(bic_w = bic_w + penalty)
+
+# 4) compare models again: total BIC (lower = better) and best-fitting model per participant
+colSums(summed_df[, bic_cols])   # original
+colSums(summed_pen[, bic_cols])  # with penalty
+
+summed_pen$best_fit <- apply(summed_pen[, bic_cols], 1, function(x) bic_cols[which.min(x)])
+table(original = summed_df$best_fit, penalised = summed_pen$best_fit)
+```
+
+#plot BIC with penalty for the GP parameters
+```{r}
+# same plot as the original BIC plot above, but with the penalised BIC of the generalised beliefs model
+sum_bic_pen <- colSums(summed_pen[, bic_cols], na.rm = TRUE)
+sum_bic_pen_df <- data.frame(
+  bic_column = names(sum_bic_pen),
+  sum_bic = as.numeric(sum_bic_pen)
+)
+sum_bic_pen_df$demeaned <- sum_bic_pen_df$sum_bic - mean(sum_bic_pen_df$sum_bic)
+
+ggplot(sum_bic_pen_df, aes(x = reorder(bic_column, -demeaned), y = demeaned)) +geom_bar(stat = "identity", fill = "#090049", alpha = 0.7) +theme_classic() +labs(x = "avoidance model", y = "BIC (GP penalty)") +theme(aspect.ratio = 2,axis.title.x = element_text(size = 16),axis.title.y = element_text(size = 16),axis.text.x = element_text(angle = 45, hjust = 1, size = 14),axis.text.y = element_text(size = 14),plot.subtitle = element_text(size = 14))
+
+
+bic_table <- data.frame(
+  model = bic_cols,
+  BIC_original = as.numeric(colSums(summed_df[, bic_cols], na.rm = TRUE)),
+  BIC_GP_penalty = as.numeric(colSums(summed_pen[, bic_cols], na.rm = TRUE))
+)
+
+bic_table
+```
+
 
 #Do best fit by one or other model differ in mh? IoU:modelfit
 ```{r}
@@ -2093,6 +2474,46 @@ dfsum <- dfmdp %>%
 
 t.test(dfsum$ppt_weight, mu = 0.5)
 #cohens_d(dfmdp$ppt_weight, mu = 0.5)
+```
+
+#Parameter correlations (GP and MDP)
+```{r}
+# correlations between all fitted parameters
+
+gp_par <- dflst %>%
+  filter(model == "euc_rbf_peak", ratings == "ratingPRE", ID %in% unique(df$ID)) %>%
+  group_by(ID) %>%
+  summarise(ls = mean(ls_subject_transformed, na.rm = TRUE),
+            peak = mean(peak_subject_transformed, na.rm = TRUE),
+            .groups = "drop")
+
+# MDP: fitted per trial, mean over runs and trials
+mdp_par <- dfmdp %>%
+  group_by(participant) %>%
+  summarise(beta_w = mean(beta_weigthed, na.rm = TRUE),
+            weight = mean(weight_weigthed, na.rm = TRUE),
+            beta_p = mean(beta_pessimistic, na.rm = TRUE),
+            pessimism = mean(p_pessimistic, na.rm = TRUE),
+            .groups = "drop") %>%
+  rename(ID = participant)
+
+par_all <- inner_join(gp_par, mdp_par, by = "ID")
+nrow(par_all)
+
+
+plot_cor_heatmap <- function(dat, title) {
+  cm <- cor(dat, method = "spearman", use = "pairwise.complete.obs")
+  cm_long <- as.data.frame(as.table(cm))
+  ggplot(cm_long, aes(x = Var1, y = Var2, fill = Freq)) +geom_tile(color = "white") +geom_text(aes(label = sprintf("%.2f", Freq))) +scale_fill_gradient2(low = "#090049", mid = "white", high = "#91316D", midpoint = 0, limits = c(-1, 1)) +theme_minimal() +theme(aspect.ratio = 1, axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1, size = 11), axis.text.y = element_text(size = 11)) +labs(fill = "rho", title = title)
+}
+
+# all parameters (GP, weighted MDP, pessimistic MDP)
+plot_cor_heatmap(par_all %>% select(ls, peak, beta_w, weight, beta_p, pessimism), "All fitted parameters")
+
+# generalisation model only 
+plot_cor_heatmap(par_all %>% select(ls, peak, beta_w, weight), "Correlation of GP and MDP model parameters")
+
+psych::corr.test(par_all %>% select(ls, peak, beta_w, weight), method = "spearman", adjust = "holm")
 ```
 
 

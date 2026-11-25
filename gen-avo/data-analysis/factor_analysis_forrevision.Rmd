@@ -205,6 +205,7 @@ fa3.load <- data.frame(unclass(fa3$loadings))
 fa3.load$varname <- rownames(fa3.load)
 fa3.load <- merge(fa3.load, itemmanual, by="varname") #add items to get content
 #fa3.load
+
 ```
 
 ```{r}
@@ -337,3 +338,212 @@ colnames(scores) <- c("subject", "F1iip", "F2iip", "F3iip")
 ```
 
 
+
+### Sample size adequacy: communalities and items per factor (Mundfrom et al., 2005)
+```{r}
+# Mundfrom, Shaw & Ke (2005) tabulate the minimum N for good (congruence .92) / excellent (.98) recovery
+# as a function of number of factors, variables-to-factors ratio (p/f) and communality level:
+# high = .6-.8, wide = .2-.8, low = .2-.4. Above p/f ~ 6 the required N stabilises.
+n_used <- sum(complete.cases(df2[,2:length(df2)]))
+L <- unclass(fa3$loadings)
+p <- nrow(L)
+h2 <- fa3$communality
+
+summary(h2)
+table(cut(h2, breaks = c(0, .2, .4, .6, .8, 1), include.lowest = TRUE))
+
+# communality level: where at least 80% of the items fall
+h2_level <- if (mean(h2 >= .6) >= .8) "high" else if (mean(h2 >= .2 & h2 <= .4) >= .8) "low" else "wide"
+
+# items per factor: by primary loading and by salient loading (|loading| >= .40)
+primary <- factor(colnames(L)[apply(abs(L), 1, which.max)], levels = colnames(L))
+items_per_factor <- data.frame(
+  primary = as.vector(table(primary)),
+  salient = colSums(abs(L) >= .40),
+  row.names = colnames(L)
+)
+items_per_factor
+
+data.frame(
+  N = n_used,
+  items = p,
+  factors = nFactors,
+  N_per_item = round(n_used / p, 1),
+  pf_ratio = round(p / nFactors, 1),
+  pf_ratio_min = min(items_per_factor$primary),
+  mean_h2 = round(mean(h2), 2),
+  h2_level = h2_level
+)
+
+mundfrom_minN <- NA
+if (!is.na(mundfrom_minN)) n_used >= mundfrom_minN
+```
+
+
+### Subsampling stability check
+```{r}
+set.seed(123) 
+
+fractions <- c(.6, .7, .8, .9)
+n_rep <- 100
+
+# get ppt and full sample loadings
+items_cc <- df2[complete.cases(df2[,2:length(df2)]), 2:length(df2)]
+L_full <- unclass(fa3$loadings)
+
+# match factors full and subsample based on best fit
+perms <- expand.grid(rep(list(1:nFactors), nFactors))
+perms <- as.matrix(perms[apply(perms, 1, function(r) length(unique(r)) == nFactors), ])
+
+match_congruence <- function(L_sub, L_ref) {
+  # Tucker congruence between every pair of factors;
+  cc <- abs(factor.congruence(L_sub, L_ref))
+  scores <- apply(perms, 1, function(pr) sum(cc[cbind(pr, 1:nFactors)]))
+  best <- perms[which.max(scores), ]
+  # return one congruence per full-sample factor, in the order of L_ref's columns (ML1, ML2, ML3)
+  cc[cbind(best, 1:nFactors)]
+}
+
+#sample
+sub_res <- list()
+for (f in fractions) {
+  n_sub <- round(f * nrow(items_cc))
+  for (i in 1:n_rep) {
+    # draw n_sub participants at random
+    sub <- items_cc[sample(nrow(items_cc), n_sub), ]
+    # item correlation matrix of the subsample
+    R_sub <- suppressWarnings(cor(sub, method = corr_type))
+    if (any(is.na(R_sub))) next  # item without variance skipped
+    
+    # refit the same model as fa3: same number of factors, ML extraction, oblimin rotation
+    fit <- tryCatch(suppressWarnings(suppressMessages(fa(R_sub, nfactors = nFactors, rotate = "oblimin", fm = "ml"))),
+                    error = function(e) NULL)
+    if (is.null(fit)) next
+    sub_res[[length(sub_res) + 1]] <- data.frame(fraction = f, n = n_sub, factor = colnames(L_full),
+                                                 congruence = match_congruence(unclass(fit$loadings), L_full))
+  }
+}
+sub_res <- bind_rows(sub_res)
+
+# Summary per subsample size and factor
+# n_fits  = number of successful fits (out of n_rep)
+# mean    = average congruence with the full-sample factor
+
+sub_summary <- sub_res %>%
+  group_by(fraction, n, factor) %>%
+  summarise(n_fits = n(),
+            mean = mean(congruence),
+            q05 = quantile(congruence, .05),
+            prop_95 = mean(congruence > .95),
+            prop_85 = mean(congruence > .85),
+            .groups = "drop")
+sub_summary
+
+
+```
+
+```{r}
+
+# mean congruence per factor against subsample size;
+# dashed lines mark the .85 and .95 thresholds.
+ggplot(sub_summary, aes(x = fraction, y = mean, color = factor)) +
+  geom_line() + geom_point() +
+  geom_errorbar(aes(ymin = q05, ymax = mean), width = 0.02) +
+  geom_hline(yintercept = c(.85, .95), linetype = "dashed", color = "grey") +
+  scale_x_continuous(breaks = fractions, labels = paste0(fractions * 100, "%")) +
+  scale_color_manual(values = c(ML1 = "#E6A3EE", ML2 = "#91316D", ML3 = "grey50"),
+                     breaks = c("ML2", "ML1", "ML3"),
+                     labels = c("Anxious-Depression", "IoU-Worry", "Well-being")) +
+  labs(x = "Subsample size (% of full sample)", y = "Tucker congruence with full sample", color = "Factor") +
+  theme_classic(base_size = 16) + theme(aspect.ratio = 1)
+
+```
+
+
+
+
+### Item correlation matrix with factor loadings (as in Gillan et al., 2016, Figure 3)
+```{r gillan_fig, fig.width = 12, fig.height = 11}
+library(cowplot)
+
+# one factor per side of the matrix: top, left, right
+fac_order  <- c("ML2", "ML1", "ML3")
+fac_labels <- c("Anxious-Depression", "IoU-Worry", "Well-being")
+
+# loadings and item correlation matrix (cdf was overwritten above, so recompute)
+L_fig <- unclass(fa3$loadings)[, fac_order]
+R_items <- cor(df2[, 2:length(df2)], method = corr_type, use = "complete.obs")
+subscale_fig <- fa3.load$subscale_pure[match(rownames(L_fig), fa3.load$varname)]
+
+# order items by primary factor, then subscale, then absolute loading within subscale
+prim <- factor(fac_order[apply(abs(L_fig), 1, which.max)], levels = fac_order)
+item_order <- rownames(L_fig)[order(prim, subscale_fig, -apply(abs(L_fig), 1, max))]
+
+# long format for the heatmap
+heat_df <- reshape2::melt(R_items[item_order, item_order], varnames = c("item1", "item2"), value.name = "r")
+heat_df$item1 <- factor(heat_df$item1, levels = item_order)
+heat_df$item2 <- factor(heat_df$item2, levels = rev(item_order))
+
+# loadings with subscale for colouring
+load_df <- data.frame(item = rownames(L_fig), subscale_pure = subscale_fig, L_fig)
+
+# minimal loading axis (-0.5, 0, 0.5); the item axis is hidden in each panel
+load_breaks <- c(-0.5, 0, 0.5)
+theme_margin <- theme_classic() +
+  theme(axis.title = element_text(size = 12, face = "bold"), legend.position = "none")
+hide_x <- theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.line.x = element_blank())
+hide_y <- theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.line.y = element_blank())
+
+# centre: item x item correlation matrix
+p_heat <- ggplot(heat_df, aes(x = item1, y = item2, fill = r)) +
+  geom_raster() +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", limits = c(-1, 1), name = "r") +
+  scale_x_discrete(expand = c(0, 0)) + scale_y_discrete(expand = c(0, 0)) +
+  theme_void() + theme(legend.position = "none")
+
+# colour bar for the correlations, placed under the matrix at its full width
+p_rbar <- ggplot(data.frame(r = seq(-1, 1, length.out = 201)), aes(x = r, y = 1, fill = r)) +
+  geom_raster() +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", limits = c(-1, 1)) +
+  scale_x_continuous(breaks = seq(-1, 1, 0.5), expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Correlation (r)", y = NULL) + theme_margin + hide_y + theme(axis.line.x = element_blank())
+
+# top: Anxious-Depression loadings (columns aligned with the matrix)
+p_top <- ggplot(load_df %>% mutate(item = factor(item, levels = item_order)),
+                aes(x = item, y = ML2, fill = subscale_pure)) +
+  geom_col(width = 1) + geom_hline(yintercept = 0, linewidth = 0.2) +
+  scale_x_discrete(expand = c(0, 0)) + scale_y_continuous(breaks = load_breaks) + expand_limits(y = load_breaks) +
+  scale_fill_manual(values = custom_colors) +
+  labs(x = NULL, y = fac_labels[1]) + theme_margin + hide_x
+
+# left: IoU-Worry loadings (rows aligned with the matrix), bars growing away from the matrix
+p_left <- ggplot(load_df %>% mutate(item = factor(item, levels = rev(item_order))),
+                 aes(x = ML1, y = item, fill = subscale_pure)) +
+  geom_col(width = 1) + geom_vline(xintercept = 0, linewidth = 0.2) +
+  scale_y_discrete(expand = c(0, 0)) + scale_x_reverse(breaks = load_breaks) + expand_limits(x = load_breaks) +
+  scale_fill_manual(values = custom_colors) +
+  labs(x = fac_labels[2], y = NULL) + theme_margin + hide_y
+
+# right: Well-being loadings (rows aligned with the matrix), bars growing away from the matrix
+p_right <- ggplot(load_df %>% mutate(item = factor(item, levels = rev(item_order))),
+                  aes(x = ML3, y = item, fill = subscale_pure)) +
+  geom_col(width = 1) + geom_vline(xintercept = 0, linewidth = 0.2) +
+  scale_y_discrete(expand = c(0, 0)) + scale_x_continuous(breaks = load_breaks) + expand_limits(x = load_breaks) +
+  scale_fill_manual(values = custom_colors) +
+  labs(x = fac_labels[3], y = NULL) + theme_margin + hide_y
+
+# subscale legend placed separately so the panels keep the same size and stay aligned
+subscale_legend <- get_plot_component(
+  p_top + theme(legend.position = "bottom") +
+    guides(fill = guide_legend(nrow = 3, title = "Subscale", title.position = "top")),
+  "guide-box-bottom", return_all = TRUE)
+
+plot_grid(
+  plot_grid(NULL, p_top, NULL, p_left, p_heat, p_right, NULL, p_rbar, NULL, ncol = 3, align = "hv", axis = "tblr",
+            rel_widths = c(1, 3, 1), rel_heights = c(1, 3, 0.45)),
+  subscale_legend,
+  ncol = 1, rel_heights = c(1, 0.15)
+)
+
+#Xggsave(filename = paste0(data_path, "/output/plots/factors_corrmatrix.pdf"), width = 12, height = 11, device = "pdf", dpi = 700)
+```

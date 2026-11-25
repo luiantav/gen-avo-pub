@@ -28,3 +28,5 @@ renv/staging/
 .DS_Store
 Thumbs.db
 model-fit-tools/
+.DS_Store
+.ipynb_checkpoints/
